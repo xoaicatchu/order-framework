@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Wolverine;
 using WolverineApp.Application.Commands.Orders.CancelOrder;
@@ -8,9 +9,11 @@ using WolverineApp.Application.DTOs.Orders;
 using WolverineApp.Application.Queries.Orders.GetOrderById;
 using WolverineApp.Application.Queries.Orders.GetOrderStatistics;
 using WolverineApp.Application.Queries.Orders.ListOrders;
+using WolverineApp.Domain.Common;
 
 namespace WolverineApp.Controllers;
 
+[Authorize]
 [ApiController]
 [Route("api/[controller]")]
 public class OrdersController : ControllerBase
@@ -23,9 +26,10 @@ public class OrdersController : ControllerBase
     }
 
     /// <summary>
-    /// [Command] Tạo đơn hàng mới
+    /// [Command] Tạo đơn hàng mới (Hỗ trợ Idempotency-Key chống click đúp)
     /// </summary>
     [HttpPost("create")]
+    [Authorize(Policy = Permissions.Orders.Create)]
     public async Task<IActionResult> CreateOrder([FromBody] CreateOrderCommand command)
     {
         var response = await _bus.InvokeAsync<OrderDto>(command);
@@ -36,6 +40,7 @@ public class OrdersController : ControllerBase
     /// [Query] Lấy chi tiết đơn hàng theo ID
     /// </summary>
     [HttpGet("{id:guid}")]
+    [Authorize(Policy = Permissions.Orders.Read)]
     public async Task<IActionResult> GetOrder(Guid id)
     {
         var response = await _bus.InvokeAsync<OrderDto>(new GetOrderByIdQuery(id));
@@ -46,6 +51,7 @@ public class OrdersController : ControllerBase
     /// [Query] Lấy danh sách đơn hàng có phân trang
     /// </summary>
     [HttpGet("list")]
+    [Authorize(Policy = Permissions.Orders.Read)]
     public async Task<IActionResult> GetAllOrders(
         [FromQuery] int pageIndex = 1,
         [FromQuery] int pageSize = 10,
@@ -60,6 +66,7 @@ public class OrdersController : ControllerBase
     /// [Command] Cập nhật trạng thái đơn hàng
     /// </summary>
     [HttpPut("{id:guid}/status")]
+    [Authorize(Policy = Permissions.Orders.Update)]
     public async Task<IActionResult> UpdateOrderStatus(Guid id, [FromBody] UpdateOrderStatusRequest request)
     {
         var response = await _bus.InvokeAsync<OrderDto>(new UpdateOrderStatusCommand(id, request.Status));
@@ -67,9 +74,10 @@ public class OrdersController : ControllerBase
     }
 
     /// <summary>
-    /// [Command] Hủy đơn hàng (Xác nhận 2 bước: isConfirmed = false -> trả về REQUIRES_CONFIRMATION; isConfirmed = true -> thực thi hủy)
+    /// [Command] Hủy đơn hàng (Yêu cầu quyền Manager/Admin + Xác nhận 2 bước)
     /// </summary>
     [HttpDelete("{id:guid}/cancel")]
+    [Authorize(Policy = Permissions.Orders.Cancel)]
     public async Task<IActionResult> CancelOrder(Guid id, [FromQuery] bool isConfirmed = false)
     {
         var response = await _bus.InvokeAsync<OrderDto>(new CancelOrderCommand(id, isConfirmed));
@@ -80,6 +88,7 @@ public class OrdersController : ControllerBase
     /// [Query] Lấy thống kê tổng hợp đơn hàng
     /// </summary>
     [HttpGet("statistics/summary")]
+    [Authorize(Policy = Permissions.Orders.Read)]
     public async Task<IActionResult> GetOrderStatistics()
     {
         var response = await _bus.InvokeAsync<OrderStatisticsDto>(new GetOrderStatisticsQuery());

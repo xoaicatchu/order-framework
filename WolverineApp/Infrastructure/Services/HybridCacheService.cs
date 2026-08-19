@@ -43,6 +43,37 @@ public class HybridCacheService : ICacheService
             cancellationToken);
     }
 
+    public async ValueTask SetAsync<T>(
+        string key,
+        T value,
+        TimeSpan? expiration = null,
+        IEnumerable<string>? tags = null,
+        CancellationToken cancellationToken = default)
+    {
+        var options = expiration.HasValue
+            ? new HybridCacheEntryOptions
+            {
+                Expiration = expiration.Value,
+                LocalCacheExpiration = TimeSpan.FromSeconds(Math.Max(5, expiration.Value.TotalSeconds / 2))
+            }
+            : null;
+
+        await _cache.SetAsync(key, value, options, tags, cancellationToken);
+    }
+
+    public async ValueTask<T?> GetAsync<T>(string key, CancellationToken cancellationToken = default)
+    {
+        return await _cache.GetOrCreateAsync<T?>(
+            key,
+            _ => ValueTask.FromResult<T?>(default),
+            new HybridCacheEntryOptions
+            {
+                Expiration = TimeSpan.FromMilliseconds(1),
+                LocalCacheExpiration = TimeSpan.FromMilliseconds(1)
+            },
+            cancellationToken: cancellationToken);
+    }
+
     public async ValueTask RemoveAsync(string key, CancellationToken cancellationToken = default)
     {
         _logger.LogDebug("🗑️ [HybridCache] Evicting cache key: {Key}", key);

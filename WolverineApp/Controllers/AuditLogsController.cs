@@ -1,11 +1,14 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Wolverine;
 using WolverineApp.Application.Common.Models;
 using WolverineApp.Application.DTOs.AuditLogs;
 using WolverineApp.Application.Queries.AuditLogs.GetAuditLogs;
+using WolverineApp.Domain.Common;
 
 namespace WolverineApp.Controllers;
 
+[Authorize(Policy = Permissions.AuditLogs.Read)]
 [ApiController]
 [Route("api/[controller]")]
 public class AuditLogsController : ControllerBase
@@ -18,7 +21,7 @@ public class AuditLogsController : ControllerBase
     }
 
     /// <summary>
-    /// [Query] Lấy danh sách lịch sử Audit Logs có phân trang
+    /// [Query] Lấy danh sách lịch sử Audit Logs có phân trang (Yêu cầu quyền Admin)
     /// </summary>
     [HttpGet("list")]
     public async Task<IActionResult> GetAuditLogs(

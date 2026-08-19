@@ -2,27 +2,83 @@
 @contentType = application/json
 
 ###############################################################################
-# 1. ORDER CREATION (Happy Path with User Tracking & Telemetry)
+# 1. AUTHENTICATION & JWT TOKEN GENERATION (IAM)
 ###############################################################################
+
+### 1.1 Đăng nhập lấy Token cho Quản Lý (Manager / Admin - Default Tenant)
+# @name loginManager
+POST {{baseUrl}}/api/auth/token
+Content-Type: {{contentType}}
+
+{
+  "username": "alice_manager",
+  "role": "Manager",
+  "tenantId": "default-tenant"
+}
+
+### Lưu Token của Manager
+@managerToken = {{loginManager.response.body.data.accessToken}}
+
+
+### 1.2 Đăng nhập lấy Token cho Nhân viên vận hành (Operator - Không có quyền Cancel)
+# @name loginOperator
+POST {{baseUrl}}/api/auth/token
+Content-Type: {{contentType}}
+
+{
+  "username": "bob_operator",
+  "role": "Operator",
+  "tenantId": "default-tenant"
+}
+
+### Lưu Token của Operator
+@operatorToken = {{loginOperator.response.body.data.accessToken}}
+
+
+### 1.3 Đăng nhập lấy Token cho Quản trị viên Tenant B (charlie_tenant_b)
+# @name loginTenantB
+POST {{baseUrl}}/api/auth/token
+Content-Type: {{contentType}}
+
+{
+  "username": "charlie_tenant_b",
+  "role": "Admin",
+  "tenantId": "tenant-b"
+}
+
+### Lưu Token của Tenant B
+@tenantBToken = {{loginTenantB.response.body.data.accessToken}}
+
+
+### 1.4 Kiểm tra thông tin tài khoản hiện tại từ Token (/api/auth/me)
+# @name getCurrentUser
+GET {{baseUrl}}/api/auth/me
+Authorization: Bearer {{managerToken}}
+
+
+###############################################################################
+# 2. IDEMPOTENCY-KEY & ORDER CREATION (Happy Path)
+###############################################################################
+### 2.1 Tạo đơn hàng với Header Idempotency-Key (Lần 1 - Thành công 201)
 # @name createOrder1
 POST {{baseUrl}}/api/orders/create
+Authorization: Bearer {{managerToken}}
 Content-Type: {{contentType}}
-X-Tenant-Id: default-tenant
-X-User-Id: alice_manager
 X-Correlation-Id: trace-req-0001
+Idempotency-Key: idempotency-uuid-00000001
 
 {
   "customerName": "John Smith",
   "customerEmail": "john.smith@example.com",
   "items": [
     {
-      "productName": "Laptop",
+      "productName": "Laptop Dell XPS",
       "sku": "SKU-LAP-001",
       "quantity": 1,
       "unitPrice": 999.99
     },
     {
-      "productName": "Mouse",
+      "productName": "Wireless Mouse",
       "sku": "SKU-MOU-002",
       "quantity": 2,
       "unitPrice": 29.99
@@ -30,18 +86,38 @@ X-Correlation-Id: trace-req-0001
   ]
 }
 
-### Lưu Order ID từ kết quả tạo đơn ở trên
+### Lưu Order ID 1
 @orderId1 = {{createOrder1.response.body.data.id}}
 
 
+### 2.2 Test Chống Click Đúp: Gửi lại y hệt với cùng Idempotency-Key (Trả về kết quả từ Cache ngay lập tức!)
+# @name createOrder1Duplicate
+POST {{baseUrl}}/api/orders/create
+Authorization: Bearer {{managerToken}}
+Content-Type: {{contentType}}
+Idempotency-Key: idempotency-uuid-00000001
+
+{
+  "customerName": "John Smith",
+  "customerEmail": "john.smith@example.com",
+  "items": [
+    {
+      "productName": "Laptop Dell XPS",
+      "sku": "SKU-LAP-001",
+      "quantity": 1,
+      "unitPrice": 999.99
+    }
+  ]
+}
+
+
 ###############################################################################
-# 2. VALIDATION FAILURE TEST (Streamlined 400 Bad Request Response)
+# 3. VALIDATION FAILURE (Streamlined 400 Bad Request)
 ###############################################################################
 # @name validationFailure
 POST {{baseUrl}}/api/orders/create
+Authorization: Bearer {{managerToken}}
 Content-Type: {{contentType}}
-X-Tenant-Id: default-tenant
-X-User-Id: system
 
 {
   "customerName": "",
@@ -58,29 +134,35 @@ X-User-Id: system
 
 
 ###############################################################################
-# 3. GET ORDER DETAILS BY ID
+# 4. GET ORDER DETAILS (HybridCache L1/L2 Cache-Aside)
 ###############################################################################
-# @name getOrderById
+### Lần 1: Cache Miss (Query Database)
+# @name getOrderByIdCacheMiss
 GET {{baseUrl}}/api/orders/{{orderId1}}
+Authorization: Bearer {{managerToken}}
 Accept: {{contentType}}
-X-Tenant-Id: default-tenant
+
+### Lần 2: Cache HIT (Lấy trực tiếp từ RAM trong 0.01ms!)
+# @name getOrderByIdCacheHit
+GET {{baseUrl}}/api/orders/{{orderId1}}
+Authorization: Bearer {{managerToken}}
+Accept: {{contentType}}
 
 
 ###############################################################################
-# 4. CREATE ORDER 2 (For 2-Step Confirmation Testing)
+# 5. CREATE ORDER 2 (For Confirmation Flow & RBAC Tests)
 ###############################################################################
 # @name createOrder2
 POST {{baseUrl}}/api/orders/create
+Authorization: Bearer {{operatorToken}}
 Content-Type: {{contentType}}
-X-Tenant-Id: default-tenant
-X-User-Id: bob_operator
 
 {
   "customerName": "Jane Doe",
   "customerEmail": "jane.doe@example.com",
   "items": [
     {
-      "productName": "Monitor 4K",
+      "productName": "Monitor 4K LG",
       "sku": "SKU-MON-003",
       "quantity": 1,
       "unitPrice": 299.99
@@ -88,27 +170,25 @@ X-User-Id: bob_operator
   ]
 }
 
-### Lưu Order ID 2
 @orderId2 = {{createOrder2.response.body.data.id}}
 
 
 ###############################################################################
-# 5. GET PAGINATED ORDERS LIST (1-Line Pagination)
+# 6. GET PAGINATED ORDERS (1-Line Mapster Projection Paging)
 ###############################################################################
 # @name listOrders
 GET {{baseUrl}}/api/orders/list?pageIndex=1&pageSize=10
+Authorization: Bearer {{managerToken}}
 Accept: {{contentType}}
-X-Tenant-Id: default-tenant
 
 
 ###############################################################################
-# 6. UPDATE ORDER STATUS
+# 7. UPDATE ORDER STATUS (Auto Cache Invalidation via Wolverine AOP)
 ###############################################################################
 # @name updateStatus
 PUT {{baseUrl}}/api/orders/{{orderId1}}/status
+Authorization: Bearer {{operatorToken}}
 Content-Type: {{contentType}}
-X-Tenant-Id: default-tenant
-X-User-Id: alice_manager
 
 {
   "status": "Confirmed"
@@ -116,54 +196,48 @@ X-User-Id: alice_manager
 
 
 ###############################################################################
-# 7. 2-STEP CONFIRMATION FLOW: STEP 1 (Prompt Warning)
+# 8. RBAC PERMISSION CHECK: CANCEL ORDER
 ###############################################################################
-# Gọi lần 1: Server trả về mã REQUIRES_CONFIRMATION và không hủy đơn
+### 8.1 Thử hủy đơn bằng quyền Operator (Sẽ bị chặn 403 Forbidden!)
+# @name cancelOrderForbidden
+DELETE {{baseUrl}}/api/orders/{{orderId2}}/cancel
+Authorization: Bearer {{operatorToken}}
+
+### 8.2 Hủy đơn bằng quyền Manager - Bước 1 (Trả về REQUIRES_CONFIRMATION)
 # @name cancelOrderStep1
 DELETE {{baseUrl}}/api/orders/{{orderId2}}/cancel
-Accept: {{contentType}}
-X-Tenant-Id: default-tenant
-X-User-Id: alice_manager
+Authorization: Bearer {{managerToken}}
 
-
-###############################################################################
-# 8. 2-STEP CONFIRMATION FLOW: STEP 2 (Confirm & Execute Cancel)
-###############################################################################
-# Gọi lần 2 với isConfirmed=true sau khi người dùng bấm Đồng ý trên Modal Popup
+### 8.3 Hủy đơn bằng quyền Manager - Bước 2 (Bấm OK -> isConfirmed=true)
 # @name cancelOrderStep2
 DELETE {{baseUrl}}/api/orders/{{orderId2}}/cancel?isConfirmed=true
-Accept: {{contentType}}
-X-Tenant-Id: default-tenant
-X-User-Id: alice_manager
+Authorization: Bearer {{managerToken}}
 
 
 ###############################################################################
-# 9. GET ORDER STATISTICS & SUMMARY
+# 9. GET ORDER STATISTICS (HybridCache 30s TTL)
 ###############################################################################
 # @name getStatistics
 GET {{baseUrl}}/api/orders/statistics/summary
-Accept: {{contentType}}
-X-Tenant-Id: default-tenant
+Authorization: Bearer {{managerToken}}
 
 
 ###############################################################################
-# 10. GET AUDIT LOGS TRAIL
+# 10. GET AUDIT LOGS (Chỉ Admin mới có quyền xem)
 ###############################################################################
 # @name getAuditLogs
 GET {{baseUrl}}/api/auditlogs/list?pageIndex=1&pageSize=10
-Accept: {{contentType}}
-X-Tenant-Id: default-tenant
+Authorization: Bearer {{tenantBToken}}
 
 
 ###############################################################################
-# 11. MULTI-TENANCY ISOLATION TEST (Tenant B)
+# 11. MULTI-TENANCY ISOLATION TEST (Tenant B vs Default Tenant)
 ###############################################################################
-# Tạo đơn hàng cho Tenant B
+### 11.1 Tạo đơn hàng cho Tenant B (Tự động trích xuất TenantId từ JWT Token)
 # @name createTenantBOrder
 POST {{baseUrl}}/api/orders/create
+Authorization: Bearer {{tenantBToken}}
 Content-Type: {{contentType}}
-X-Tenant-Id: tenant-b
-X-User-Id: charlie_tenant_b
 
 {
   "customerName": "VIP Client (Tenant B)",
@@ -178,30 +252,28 @@ X-User-Id: charlie_tenant_b
   ]
 }
 
-### Kiểm tra phân lập: Tenant B chỉ thấy đơn hàng của chính mình
+### 11.2 Query Tenant B: Chỉ thấy đơn hàng của Tenant B
 # @name listTenantBOrders
 GET {{baseUrl}}/api/orders/list?pageIndex=1&pageSize=10
-Accept: {{contentType}}
-X-Tenant-Id: tenant-b
+Authorization: Bearer {{tenantBToken}}
 
-### Kiểm tra phân lập: Default Tenant KHÔNG THỂ THẤY đơn hàng của Tenant B
+### 11.3 Query Default Tenant: KHÔNG THỂ THẤY đơn hàng của Tenant B
 # @name listDefaultTenantOrders
 GET {{baseUrl}}/api/orders/list?pageIndex=1&pageSize=10
-Accept: {{contentType}}
-X-Tenant-Id: default-tenant
+Authorization: Bearer {{managerToken}}
 
 
 ###############################################################################
-# 12. KUBERNETES OBSERVABILITY & HEALTH CHECK PROBES
+# 12. KUBERNETES OBSERVABILITY & HEALTH CHECK PROBES (Public)
 ###############################################################################
 ### Kubernetes Liveness Probe
 # @name k8sLiveness
 GET {{baseUrl}}/health/live
 
-### Kubernetes Readiness Probe (Checks Database & RAM)
+### Kubernetes Readiness Probe
 # @name k8sReadiness
 GET {{baseUrl}}/health/ready
 
-### Deep System Telemetry & Metrics (DB Latency, GC Memory Allocation)
+### Deep System Telemetry & Metrics
 # @name deepHealthTelemetry
 GET {{baseUrl}}/health
