@@ -1,0 +1,207 @@
+@baseUrl = http://localhost:5000
+@contentType = application/json
+
+###############################################################################
+# 1. ORDER CREATION (Happy Path with User Tracking & Telemetry)
+###############################################################################
+# @name createOrder1
+POST {{baseUrl}}/api/orders/create
+Content-Type: {{contentType}}
+X-Tenant-Id: default-tenant
+X-User-Id: alice_manager
+X-Correlation-Id: trace-req-0001
+
+{
+  "customerName": "John Smith",
+  "customerEmail": "john.smith@example.com",
+  "items": [
+    {
+      "productName": "Laptop",
+      "sku": "SKU-LAP-001",
+      "quantity": 1,
+      "unitPrice": 999.99
+    },
+    {
+      "productName": "Mouse",
+      "sku": "SKU-MOU-002",
+      "quantity": 2,
+      "unitPrice": 29.99
+    }
+  ]
+}
+
+### Lưu Order ID từ kết quả tạo đơn ở trên
+@orderId1 = {{createOrder1.response.body.data.id}}
+
+
+###############################################################################
+# 2. VALIDATION FAILURE TEST (Streamlined 400 Bad Request Response)
+###############################################################################
+# @name validationFailure
+POST {{baseUrl}}/api/orders/create
+Content-Type: {{contentType}}
+X-Tenant-Id: default-tenant
+X-User-Id: system
+
+{
+  "customerName": "",
+  "customerEmail": "invalid-email-format",
+  "items": [
+    {
+      "productName": "",
+      "sku": "",
+      "quantity": 0,
+      "unitPrice": -10.0
+    }
+  ]
+}
+
+
+###############################################################################
+# 3. GET ORDER DETAILS BY ID
+###############################################################################
+# @name getOrderById
+GET {{baseUrl}}/api/orders/{{orderId1}}
+Accept: {{contentType}}
+X-Tenant-Id: default-tenant
+
+
+###############################################################################
+# 4. CREATE ORDER 2 (For 2-Step Confirmation Testing)
+###############################################################################
+# @name createOrder2
+POST {{baseUrl}}/api/orders/create
+Content-Type: {{contentType}}
+X-Tenant-Id: default-tenant
+X-User-Id: bob_operator
+
+{
+  "customerName": "Jane Doe",
+  "customerEmail": "jane.doe@example.com",
+  "items": [
+    {
+      "productName": "Monitor 4K",
+      "sku": "SKU-MON-003",
+      "quantity": 1,
+      "unitPrice": 299.99
+    }
+  ]
+}
+
+### Lưu Order ID 2
+@orderId2 = {{createOrder2.response.body.data.id}}
+
+
+###############################################################################
+# 5. GET PAGINATED ORDERS LIST (1-Line Pagination)
+###############################################################################
+# @name listOrders
+GET {{baseUrl}}/api/orders/list?pageIndex=1&pageSize=10
+Accept: {{contentType}}
+X-Tenant-Id: default-tenant
+
+
+###############################################################################
+# 6. UPDATE ORDER STATUS
+###############################################################################
+# @name updateStatus
+PUT {{baseUrl}}/api/orders/{{orderId1}}/status
+Content-Type: {{contentType}}
+X-Tenant-Id: default-tenant
+X-User-Id: alice_manager
+
+{
+  "status": "Confirmed"
+}
+
+
+###############################################################################
+# 7. 2-STEP CONFIRMATION FLOW: STEP 1 (Prompt Warning)
+###############################################################################
+# Gọi lần 1: Server trả về mã REQUIRES_CONFIRMATION và không hủy đơn
+# @name cancelOrderStep1
+DELETE {{baseUrl}}/api/orders/{{orderId2}}/cancel
+Accept: {{contentType}}
+X-Tenant-Id: default-tenant
+X-User-Id: alice_manager
+
+
+###############################################################################
+# 8. 2-STEP CONFIRMATION FLOW: STEP 2 (Confirm & Execute Cancel)
+###############################################################################
+# Gọi lần 2 với isConfirmed=true sau khi người dùng bấm Đồng ý trên Modal Popup
+# @name cancelOrderStep2
+DELETE {{baseUrl}}/api/orders/{{orderId2}}/cancel?isConfirmed=true
+Accept: {{contentType}}
+X-Tenant-Id: default-tenant
+X-User-Id: alice_manager
+
+
+###############################################################################
+# 9. GET ORDER STATISTICS & SUMMARY
+###############################################################################
+# @name getStatistics
+GET {{baseUrl}}/api/orders/statistics/summary
+Accept: {{contentType}}
+X-Tenant-Id: default-tenant
+
+
+###############################################################################
+# 10. GET AUDIT LOGS TRAIL
+###############################################################################
+# @name getAuditLogs
+GET {{baseUrl}}/api/auditlogs/list?pageIndex=1&pageSize=10
+Accept: {{contentType}}
+X-Tenant-Id: default-tenant
+
+
+###############################################################################
+# 11. MULTI-TENANCY ISOLATION TEST (Tenant B)
+###############################################################################
+# Tạo đơn hàng cho Tenant B
+# @name createTenantBOrder
+POST {{baseUrl}}/api/orders/create
+Content-Type: {{contentType}}
+X-Tenant-Id: tenant-b
+X-User-Id: charlie_tenant_b
+
+{
+  "customerName": "VIP Client (Tenant B)",
+  "customerEmail": "vip@tenant-b.com",
+  "items": [
+    {
+      "productName": "Enterprise Server Rack",
+      "sku": "SKU-SRV-999",
+      "quantity": 1,
+      "unitPrice": 4999.00
+    }
+  ]
+}
+
+### Kiểm tra phân lập: Tenant B chỉ thấy đơn hàng của chính mình
+# @name listTenantBOrders
+GET {{baseUrl}}/api/orders/list?pageIndex=1&pageSize=10
+Accept: {{contentType}}
+X-Tenant-Id: tenant-b
+
+### Kiểm tra phân lập: Default Tenant KHÔNG THỂ THẤY đơn hàng của Tenant B
+# @name listDefaultTenantOrders
+GET {{baseUrl}}/api/orders/list?pageIndex=1&pageSize=10
+Accept: {{contentType}}
+X-Tenant-Id: default-tenant
+
+
+###############################################################################
+# 12. KUBERNETES OBSERVABILITY & HEALTH CHECK PROBES
+###############################################################################
+### Kubernetes Liveness Probe
+# @name k8sLiveness
+GET {{baseUrl}}/health/live
+
+### Kubernetes Readiness Probe (Checks Database & RAM)
+# @name k8sReadiness
+GET {{baseUrl}}/health/ready
+
+### Deep System Telemetry & Metrics (DB Latency, GC Memory Allocation)
+# @name deepHealthTelemetry
+GET {{baseUrl}}/health
