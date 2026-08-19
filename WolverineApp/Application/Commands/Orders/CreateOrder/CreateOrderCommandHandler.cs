@@ -1,3 +1,4 @@
+using Mapster;
 using WolverineApp.Application.Common.Interfaces;
 using WolverineApp.Application.DTOs.Orders;
 using WolverineApp.Domain.Orders;
@@ -24,15 +25,6 @@ public class CreateOrderCommandHandler
         await _unitOfWork.GetRepository<Order>().AddAsync(order, cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-        return new OrderDto(
-            order.Id,
-            order.OrderNumber,
-            order.CustomerName,
-            order.CustomerEmail,
-            order.TotalAmount,
-            order.Status.ToString(),
-            order.CreatedAt,
-            order.Items.Select(i => new OrderItemDto(i.Id, i.ProductName, i.Sku, i.Quantity, i.UnitPrice, i.Total)).ToList()
-        );
+        return order.Adapt<OrderDto>();
     }
 }

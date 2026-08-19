@@ -1,3 +1,4 @@
+using Mapster;
 using Microsoft.EntityFrameworkCore;
 using WolverineApp.Application.Common.Extensions;
 using WolverineApp.Application.Common.Interfaces;
@@ -33,19 +34,10 @@ public class ListOrdersQueryHandler
                                              o.OrderNumber.ToLower().Contains(search));
         }
 
-        // Tự động: CountAsync + Skip + Take + ToListAsync + Map DTO chỉ bằng 1 dòng gọi duy nhất!
+        // Tự động: CountAsync + Skip + Take + ProjectToType<OrderDto> + ToListAsync chỉ bằng 1 dòng gọi duy nhất!
         return await baseQuery
-            .Include(o => o.Items)
             .OrderByDescending(o => o.CreatedAt)
-            .ToPagedResultAsync(query.PageIndex, query.PageSize, order => new OrderDto(
-                order.Id,
-                order.OrderNumber,
-                order.CustomerName,
-                order.CustomerEmail,
-                order.TotalAmount,
-                order.Status.ToString(),
-                order.CreatedAt,
-                order.Items.Select(i => new OrderItemDto(i.Id, i.ProductName, i.Sku, i.Quantity, i.UnitPrice, i.Total)).ToList()
-            ), cancellationToken);
+            .ProjectToType<OrderDto>()
+            .ToPagedResultAsync(query.PageIndex, query.PageSize, cancellationToken);
     }
 }

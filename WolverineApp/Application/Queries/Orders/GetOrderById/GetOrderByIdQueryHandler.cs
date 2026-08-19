@@ -1,3 +1,4 @@
+using Mapster;
 using Microsoft.EntityFrameworkCore;
 using WolverineApp.Application.Common.Interfaces;
 using WolverineApp.Application.DTOs.Orders;
@@ -16,23 +17,15 @@ public class GetOrderByIdQueryHandler
 
     public async Task<OrderDto> Handle(GetOrderByIdQuery query, CancellationToken cancellationToken)
     {
-        var order = await _unitOfWork.GetRepository<Order>()
-            .Query() // Default AsNoTracking!
-            .Include(o => o.Items)
-            .FirstOrDefaultAsync(o => o.Id == query.Id, cancellationToken);
+        var orderDto = await _unitOfWork.GetRepository<Order>()
+            .Query()
+            .Where(o => o.Id == query.Id)
+            .ProjectToType<OrderDto>()
+            .FirstOrDefaultAsync(cancellationToken);
 
-        if (order is null)
+        if (orderDto is null)
             throw new KeyNotFoundException($"Order not found: {query.Id}");
 
-        return new OrderDto(
-            order.Id,
-            order.OrderNumber,
-            order.CustomerName,
-            order.CustomerEmail,
-            order.TotalAmount,
-            order.Status.ToString(),
-            order.CreatedAt,
-            order.Items.Select(i => new OrderItemDto(i.Id, i.ProductName, i.Sku, i.Quantity, i.UnitPrice, i.Total)).ToList()
-        );
+        return orderDto;
     }
 }

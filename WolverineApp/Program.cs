@@ -32,13 +32,16 @@ builder.Services.Configure<ForwardedHeadersOptions>(options =>
     options.KnownProxies.Clear();
 });
 
-// 3. Controllers & Swagger API Documentation
+// 3. Controllers, Swagger & Mapster Configuration
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {
     c.SwaggerDoc("v1", new() { Title = "Wolverine Enterprise Order Management API", Version = "v1" });
 });
+
+// Mapster TypeAdapterConfig Scan
+Mapster.TypeAdapterConfig.GlobalSettings.Scan(System.Reflection.Assembly.GetExecutingAssembly());
 
 // 4. Telemetry & Context Providers
 builder.Services.AddHttpContextAccessor();
