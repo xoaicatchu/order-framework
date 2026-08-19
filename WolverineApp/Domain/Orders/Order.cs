@@ -12,7 +12,7 @@ public class Order : BaseAuditableEntity
     public OrderStatus Status { get; set; } = OrderStatus.Pending;
     public List<OrderItem> Items { get; set; } = [];
 
-    public static Order Create(string customerName, string customerEmail, IEnumerable<(string ProductName, string? Sku, int Quantity, decimal UnitPrice)> items)
+    public static Order Create(string customerName, string customerEmail, IEnumerable<OrderItem> items)
     {
         var order = new Order
         {
@@ -25,16 +25,10 @@ public class Order : BaseAuditableEntity
 
         foreach (var item in items)
         {
-            order.Items.Add(new OrderItem
-            {
-                Id = Guid.NewGuid(),
-                OrderId = order.Id,
-                ProductName = item.ProductName,
-                Sku = item.Sku,
-                Quantity = item.Quantity,
-                UnitPrice = item.UnitPrice,
-                Total = item.Quantity * item.UnitPrice
-            });
+            item.OrderId = order.Id;
+            if (item.Id == Guid.Empty) item.Id = Guid.NewGuid();
+            if (item.Total == 0) item.Total = item.Quantity * item.UnitPrice;
+            order.Items.Add(item);
         }
 
         order.TotalAmount = order.Items.Sum(i => i.Total);

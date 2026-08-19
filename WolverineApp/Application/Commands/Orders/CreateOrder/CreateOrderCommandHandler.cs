@@ -16,15 +16,14 @@ public class CreateOrderCommandHandler
 
     public async Task<OrderDto> Handle(CreateOrderCommand command, CancellationToken cancellationToken)
     {
-        var order = Order.Create(
-            command.CustomerName,
-            command.CustomerEmail,
-            command.Items.Select(i => (i.ProductName, i.Sku, i.Quantity, i.UnitPrice))
-        );
+        // Inbound mapping: CreateOrderItemDto -> OrderItem via Mapster
+        var items = command.Items.Adapt<List<OrderItem>>();
+        var order = Order.Create(command.CustomerName, command.CustomerEmail, items);
 
         await _unitOfWork.GetRepository<Order>().AddAsync(order, cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
+        // Outbound mapping: Order -> OrderDto via Mapster
         return order.Adapt<OrderDto>();
     }
 }
