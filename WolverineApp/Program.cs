@@ -2,6 +2,7 @@ using JasperFx.CodeGeneration.Model;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Hybrid;
 using Serilog;
 using Wolverine;
 using Wolverine.FluentValidation;
@@ -54,7 +55,8 @@ builder.Services.AddScoped<AuditableEntityInterceptor>();
 builder.Services.AddDbContext<ApplicationDbContext>((sp, options) =>
 {
     var interceptor = sp.GetRequiredService<AuditableEntityInterceptor>();
-    options.UseSqlite("Data Source=orders.db")
+    var connStr = builder.Configuration.GetConnectionString("DefaultConnection") ?? "Data Source=orders.db";
+    options.UseSqlite(connStr)
            .UseQueryTrackingBehavior(QueryTrackingBehavior.NoTracking)
            .AddInterceptors(interceptor);
 });
@@ -64,15 +66,39 @@ builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 builder.Services.AddScoped(typeof(IRepository<>), typeof(Repository<>));
 builder.Services.AddScoped<IIdempotencyService, IdempotencyService>();
 
-// 6. Transactional Outbox Background Processor (Reliable Event Dispatcher)
+// 6. Enterprise Hybrid Caching (L1 In-Memory + L2 Redis Distributed Cache)
+#pragma warning disable EXTEXP0018
+builder.Services.AddHybridCache(options =>
+{
+    options.DefaultEntryOptions = new HybridCacheEntryOptions
+    {
+        Expiration = TimeSpan.FromMinutes(5),
+        LocalCacheExpiration = TimeSpan.FromMinutes(2)
+    };
+});
+#pragma warning restore EXTEXP0018
+
+var redisConnectionString = builder.Configuration.GetConnectionString("Redis");
+if (!string.IsNullOrWhiteSpace(redisConnectionString))
+{
+    builder.Services.AddStackExchangeRedisCache(options =>
+    {
+        options.Configuration = redisConnectionString;
+        options.InstanceName = "EDAP_";
+    });
+}
+
+builder.Services.AddSingleton<ICacheService, HybridCacheService>();
+
+// 7. Transactional Outbox Background Processor (Reliable Event Dispatcher)
 builder.Services.AddHostedService<OutboxBackgroundProcessor>();
 
-// 7. Enterprise Health Checks (Liveness, Readiness & System Telemetry)
+// 8. Enterprise Health Checks (Liveness, Readiness & System Telemetry)
 builder.Services.AddHealthChecks()
     .AddDbContextCheck<ApplicationDbContext>(name: "database", tags: ["ready"])
     .AddCheck<SystemMemoryHealthCheck>(name: "memory", tags: ["live", "ready"]);
 
-// 8. Wolverine Message Bus & CQRS Pipeline
+// 9. Wolverine Message Bus & CQRS Pipeline
 builder.Host.UseWolverine(opts =>
 {
     opts.ServiceLocationPolicy = ServiceLocationPolicy.AllowedButWarn;
@@ -81,7 +107,7 @@ builder.Host.UseWolverine(opts =>
 
 var app = builder.Build();
 
-// 9. Auto-Migration on startup
+// 10. Auto-Migration on startup
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
@@ -89,7 +115,7 @@ using (var scope = app.Services.CreateScope())
     Log.Information("Database schema initialized and verified successfully");
 }
 
-// 10. HTTP Telemetry & Middleware Pipeline (Hỗ trợ K8s Reverse Proxy)
+// 11. HTTP Telemetry & Middleware Pipeline (Hỗ trợ K8s Reverse Proxy)
 app.UseForwardedHeaders();
 app.UseMiddleware<CorrelationIdMiddleware>();
 
@@ -121,7 +147,7 @@ app.UseSwaggerUI(c =>
 app.UseHttpsRedirection();
 app.UseAuthorization();
 
-// 11. Map Health Check Endpoints (K8s Liveness / Readiness Probes)
+// 12. Map Health Check Endpoints (K8s Liveness / Readiness Probes)
 app.MapHealthChecks("/health/live", new HealthCheckOptions
 {
     Predicate = check => check.Tags.Contains("live"),
