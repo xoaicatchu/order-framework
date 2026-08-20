@@ -72,4 +72,14 @@ public class FileSystemReportTemplateStore : IReportTemplateStore
 
         return Task.FromResult(templates.ToList());
     }
+
+    public Task DeleteCustomTemplateAsync(string templateCode, string tenantId, CancellationToken cancellationToken = default)
+    {
+        var tenantSpecificFile = Path.Combine(_baseTemplatesPath, tenantId, $"{templateCode}.liquid");
+        if (File.Exists(tenantSpecificFile))
+        {
+            File.Delete(tenantSpecificFile);
+        }
+        return Task.CompletedTask;
+    }
 }

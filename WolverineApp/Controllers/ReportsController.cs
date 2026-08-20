@@ -9,6 +9,8 @@ using WolverineApp.Domain.Identity;
 
 namespace WolverineApp.Controllers;
 
+public record SaveTemplateDto(string TemplateCode, string Content);
+
 [Authorize]
 [ApiController]
 [Route("api/[controller]")]
@@ -36,6 +38,44 @@ public class ReportsController : ControllerBase
         var tenantId = User.FindFirst("tenant_id")?.Value ?? "default-tenant";
         var templates = await _templateStore.ListAvailableTemplatesAsync(tenantId);
         return Ok(ApiResponse<List<string>>.Ok(templates));
+    }
+
+    [HttpGet("templates/{code}")]
+    [HasPermission("Reports", "Read")]
+    public async Task<IActionResult> GetTemplateContent(string code)
+    {
+        var tenantId = User.FindFirst("tenant_id")?.Value ?? "default-tenant";
+        var content = await _templateStore.GetTemplateContentAsync(code, tenantId);
+        if (content is null)
+        {
+            return NotFound(ApiResponse<string>.Fail($"Không tìm thấy mẫu in '{code}'."));
+        }
+        return Ok(ApiResponse<string>.Ok(content));
+    }
+
+    [HttpPost("templates")]
+    [HasPermission("Reports", "Export")]
+    public async Task<IActionResult> SaveTemplate([FromBody] SaveTemplateDto dto)
+    {
+        var tenantId = User.FindFirst("tenant_id")?.Value ?? "default-tenant";
+
+        var validation = _reportEngine.ValidateTemplate(dto.Content);
+        if (!validation.IsValid)
+        {
+            return BadRequest(ApiResponse<string>.Fail(validation.ErrorMessage ?? "Lỗi cú pháp Liquid.", "SYNTAX_ERROR"));
+        }
+
+        await _templateStore.SaveCustomTemplateAsync(dto.TemplateCode, tenantId, dto.Content);
+        return Ok(ApiResponse<string>.Ok($"Đã lưu mẫu in '{dto.TemplateCode}' vào Database thành công cho đơn vị '{tenantId}'."));
+    }
+
+    [HttpDelete("templates/{code}")]
+    [HasPermission("Reports", "Export")]
+    public async Task<IActionResult> DeleteCustomTemplate(string code)
+    {
+        var tenantId = User.FindFirst("tenant_id")?.Value ?? "default-tenant";
+        await _templateStore.DeleteCustomTemplateAsync(code, tenantId);
+        return Ok(ApiResponse<string>.Ok($"Đã xóa mẫu in tùy biến '{code}' của đơn vị '{tenantId}'."));
     }
 
     [HttpPost("templates/validate")]

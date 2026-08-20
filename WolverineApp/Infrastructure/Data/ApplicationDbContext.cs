@@ -36,6 +36,9 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
     public DbSet<AppRolePermission> RolePermissions => Set<AppRolePermission>();
     public DbSet<AppUserRole> UserRoles => Set<AppUserRole>();
 
+    // Report Templates
+    public DbSet<WolverineApp.Domain.Reporting.ReportTemplate> ReportTemplates => Set<WolverineApp.Domain.Reporting.ReportTemplate>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -45,10 +48,23 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
         modelBuilder.Entity<OrderItem>().HasQueryFilter(e => !e.IsDeleted && e.TenantId == _tenantProvider.TenantId);
         modelBuilder.Entity<AuditLog>().HasQueryFilter(e => e.TenantId == _tenantProvider.TenantId);
         
-        // Multi-Tenancy on Dynamic Roles (System Roles có thể truy cập được hoặc lọc theo Tenant)
+        // Multi-Tenancy on Dynamic Roles & Report Templates
         modelBuilder.Entity<AppRole>().HasQueryFilter(e => !e.IsDeleted && (e.TenantId == _tenantProvider.TenantId || e.IsSystemRole));
         modelBuilder.Entity<AppRolePermission>().HasQueryFilter(e => e.TenantId == _tenantProvider.TenantId || e.Role.IsSystemRole);
         modelBuilder.Entity<AppUserRole>().HasQueryFilter(e => e.TenantId == _tenantProvider.TenantId);
+        modelBuilder.Entity<WolverineApp.Domain.Reporting.ReportTemplate>().HasQueryFilter(e => !e.IsDeleted && (e.TenantId == _tenantProvider.TenantId || e.IsSystemDefault));
+
+        modelBuilder.Entity<WolverineApp.Domain.Reporting.ReportTemplate>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Code).IsRequired().HasMaxLength(100);
+            entity.Property(e => e.Name).IsRequired().HasMaxLength(255);
+            entity.Property(e => e.Category).IsRequired().HasMaxLength(100);
+            entity.Property(e => e.Description).HasMaxLength(500);
+            entity.Property(e => e.Content).IsRequired();
+            entity.Property(e => e.TenantId).IsRequired().HasMaxLength(50);
+            entity.HasIndex(e => new { e.TenantId, e.Code }).IsUnique();
+        });
 
         modelBuilder.Entity<Order>(entity =>
         {

@@ -163,8 +163,8 @@ if (!string.IsNullOrWhiteSpace(redisConnectionString))
 builder.Services.AddSingleton<ICacheService, HybridCacheService>();
 builder.Services.AddHostedService<OutboxBackgroundProcessor>();
 
-// Enterprise Template-Driven Reporting & Document Rendering Engine
-builder.Services.AddSingleton<IReportTemplateStore, WolverineApp.Infrastructure.Reporting.TemplateStores.FileSystemReportTemplateStore>();
+// Enterprise Template-Driven Reporting & Document Rendering Engine (Database-Backed Template Store)
+builder.Services.AddSingleton<IReportTemplateStore, WolverineApp.Infrastructure.Reporting.TemplateStores.DbReportTemplateStore>();
 builder.Services.AddSingleton<WolverineApp.Application.Common.Reporting.IDocumentRenderer, WolverineApp.Infrastructure.Reporting.Renderers.QuestPdfDocumentRenderer>();
 builder.Services.AddSingleton<WolverineApp.Application.Common.Reporting.IDocumentRenderer, WolverineApp.Infrastructure.Reporting.Renderers.HtmlDocumentRenderer>();
 builder.Services.AddScoped<WolverineApp.Application.Common.Reporting.IReportEngine, WolverineApp.Infrastructure.Reporting.LiquidReportEngine>();

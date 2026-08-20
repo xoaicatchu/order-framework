@@ -45,15 +45,14 @@ public static class DbInitializer
                 "Reports:Read",
                 "Reports:Export"
             ]);
-            await context.Roles.AddAsync(adminDonViRole);
-
-            context.UserRoles.Add(new AppUserRole
+            adminDonViRole.UserRoles.Add(new AppUserRole
             {
                 Id = Guid.NewGuid(),
                 UserId = "alice_manager",
                 RoleId = adminDonViRole.Id,
                 TenantId = defaultTenant
             });
+            await context.Roles.AddAsync(adminDonViRole);
         }
 
         var operatorRole = await context.Roles
@@ -68,15 +67,14 @@ public static class DbInitializer
                 "Orders:Create",
                 "Orders:Update"
             ]);
-            await context.Roles.AddAsync(operatorRole);
-
-            context.UserRoles.Add(new AppUserRole
+            operatorRole.UserRoles.Add(new AppUserRole
             {
                 Id = Guid.NewGuid(),
                 UserId = "bob_operator",
                 RoleId = operatorRole.Id,
                 TenantId = defaultTenant
             });
+            await context.Roles.AddAsync(operatorRole);
         }
 
         const string tenantB = "tenant-b";
@@ -101,15 +99,48 @@ public static class DbInitializer
                 "Reports:Read",
                 "Reports:Export"
             ]);
-            await context.Roles.AddAsync(tenantBAdminRole);
-
-            context.UserRoles.Add(new AppUserRole
+            tenantBAdminRole.UserRoles.Add(new AppUserRole
             {
                 Id = Guid.NewGuid(),
                 UserId = "charlie_tenant_b",
                 RoleId = tenantBAdminRole.Id,
                 TenantId = tenantB
             });
+            await context.Roles.AddAsync(tenantBAdminRole);
+        }
+
+        // Seed System Default Report Templates
+        var invoiceTemplate = await context.ReportTemplates
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(t => t.IsSystemDefault && t.Code == "Invoice_A4");
+
+        if (invoiceTemplate is null)
+        {
+            var templatePath = Path.Combine(AppContext.BaseDirectory, "Infrastructure", "Reporting", "Templates", "Invoice_A4.liquid");
+            if (!File.Exists(templatePath))
+            {
+                templatePath = Path.Combine(Directory.GetCurrentDirectory(), "Infrastructure", "Reporting", "Templates", "Invoice_A4.liquid");
+            }
+
+            string content = "";
+            if (File.Exists(templatePath))
+            {
+                content = await File.ReadAllTextAsync(templatePath);
+            }
+
+            if (!string.IsNullOrWhiteSpace(content))
+            {
+                var systemTemplate = WolverineApp.Domain.Reporting.ReportTemplate.Create(
+                    code: "Invoice_A4",
+                    name: "Hóa đơn bán hàng & Xuất kho A4 Chuẩn",
+                    content: content,
+                    tenantId: "system",
+                    description: "Mẫu in hóa đơn A4 mặc định của hệ thống",
+                    category: "Billing",
+                    isSystemDefault: true
+                );
+                await context.ReportTemplates.AddAsync(systemTemplate);
+            }
         }
 
         await context.SaveChangesAsync();

@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Text.Json;
 using Fluid;
 using Fluid.Values;
 using Microsoft.Extensions.Logging;
@@ -206,7 +207,32 @@ public class LiquidReportEngine : IReportEngine
             return new ArrayValue(resultList);
         });
 
-        var context = new TemplateContext(dataModel, options);
+        var model = NormalizeDataModel(dataModel);
+        var context = new TemplateContext(model, options);
         return context;
+    }
+
+    private static object NormalizeDataModel(object dataModel)
+    {
+        if (dataModel is JsonElement jsonElement)
+        {
+            return ConvertJsonElement(jsonElement) ?? dataModel;
+        }
+        return dataModel;
+    }
+
+    private static object? ConvertJsonElement(JsonElement element)
+    {
+        return element.ValueKind switch
+        {
+            JsonValueKind.Object => element.EnumerateObject().ToDictionary(p => p.Name, p => ConvertJsonElement(p.Value), StringComparer.OrdinalIgnoreCase),
+            JsonValueKind.Array => element.EnumerateArray().Select(ConvertJsonElement).ToList(),
+            JsonValueKind.String => element.GetString(),
+            JsonValueKind.Number => element.TryGetDecimal(out var d) ? d : element.GetDouble(),
+            JsonValueKind.True => true,
+            JsonValueKind.False => false,
+            JsonValueKind.Null => null,
+            _ => element.ToString()
+        };
     }
 }
