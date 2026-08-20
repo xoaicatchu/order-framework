@@ -50,17 +50,25 @@ public class AuthController : ControllerBase
 
     [Authorize]
     [HttpGet("me")]
-    public IActionResult GetCurrentUser()
+    public async Task<IActionResult> GetCurrentUser()
     {
         var claims = User.Claims.Select(c => new { c.Type, c.Value }).ToList();
         var isRoot = string.Equals(User.FindFirst("is_root")?.Value, "true", StringComparison.OrdinalIgnoreCase);
-        var permissions = User.FindAll("permission").Select(c => c.Value).ToList();
+        var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value
+            ?? User.FindFirst("sub")?.Value
+            ?? User.Identity?.Name
+            ?? "system";
+        var tenantId = User.FindFirst("tenant_id")?.Value ?? "default-tenant";
+
+        var permissions = isRoot
+            ? new List<string> { PermissionDiscoveryService.RootPermissionCode }
+            : await _permissionService.GetUserPermissionsAsync(userId, tenantId);
 
         var userInfo = new
         {
-            UserId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value,
+            UserId = userId,
             Username = User.Identity?.Name,
-            TenantId = User.FindFirst("tenant_id")?.Value,
+            TenantId = tenantId,
             IsRoot = isRoot,
             Permissions = permissions,
             Claims = claims

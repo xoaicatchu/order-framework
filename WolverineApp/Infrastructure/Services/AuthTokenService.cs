@@ -10,7 +10,6 @@ namespace WolverineApp.Infrastructure.Services;
 
 public class AuthTokenService : IAuthTokenService
 {
-    public const string RootPermissionCode = "System:Root";
     private readonly IConfiguration _configuration;
 
     public AuthTokenService(IConfiguration configuration)
@@ -28,6 +27,7 @@ public class AuthTokenService : IAuthTokenService
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secretKey));
         var credentials = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
 
+        // Slim JWT Claims: Chỉ lưu thông tin định danh tối giản để tránh Token Bloat
         var claims = new List<Claim>
         {
             new(JwtRegisteredClaimNames.Sub, userId),
@@ -37,22 +37,10 @@ public class AuthTokenService : IAuthTokenService
             new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
         };
 
-        var permissionList = permissions?.ToList() ?? [];
-
         if (isRoot)
         {
             claims.Add(new Claim("is_root", "true"));
             claims.Add(new Claim(ClaimTypes.Role, "SystemAdmin"));
-            claims.Add(new Claim("permission", RootPermissionCode));
-            if (!permissionList.Contains(RootPermissionCode))
-            {
-                permissionList.Add(RootPermissionCode);
-            }
-        }
-
-        foreach (var perm in permissionList)
-        {
-            claims.Add(new Claim("permission", perm));
         }
 
         var expires = DateTime.UtcNow.AddMinutes(lifetimeMinutes);
@@ -75,7 +63,7 @@ public class AuthTokenService : IAuthTokenService
             UserId: userId,
             TenantId: tenantId,
             IsRoot: isRoot,
-            Permissions: permissionList
+            Permissions: permissions?.ToList() ?? []
         );
     }
 }
