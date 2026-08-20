@@ -2,32 +2,44 @@
 @contentType = application/json
 
 ###############################################################################
-# 1. AUTHENTICATION & JWT TOKEN GENERATION (IAM)
+# 1. AUTHENTICATION & DYNAMIC RBAC (IAM & ROOT USER)
 ###############################################################################
 
-### 1.1 Đăng nhập lấy Token cho Quản Lý (Manager / Admin - Default Tenant)
-# @name loginManager
+### 1.1 Đăng nhập Root User (System Admin tối cao - Toàn quyền toàn hệ thống)
+# @name loginRoot
+POST {{baseUrl}}/api/auth/token
+Content-Type: {{contentType}}
+
+{
+  "username": "root_superadmin",
+  "isRoot": true
+}
+
+### Lưu Token của Root Admin
+@rootToken = {{loginRoot.response.body.data.accessToken}}
+
+
+### 1.2 Đăng nhập Admin Đơn Vị (alice_manager - default-tenant)
+# @name loginAdminDonVi
 POST {{baseUrl}}/api/auth/token
 Content-Type: {{contentType}}
 
 {
   "username": "alice_manager",
-  "role": "Manager",
   "tenantId": "default-tenant"
 }
 
-### Lưu Token của Manager
-@managerToken = {{loginManager.response.body.data.accessToken}}
+### Lưu Token của Admin Đơn Vị
+@adminToken = {{loginAdminDonVi.response.body.data.accessToken}}
 
 
-### 1.2 Đăng nhập lấy Token cho Nhân viên vận hành (Operator - Không có quyền Cancel)
+### 1.3 Đăng nhập Nhân viên vận hành (bob_operator - Chưa có quyền Cancel)
 # @name loginOperator
 POST {{baseUrl}}/api/auth/token
 Content-Type: {{contentType}}
 
 {
   "username": "bob_operator",
-  "role": "Operator",
   "tenantId": "default-tenant"
 }
 
@@ -35,14 +47,13 @@ Content-Type: {{contentType}}
 @operatorToken = {{loginOperator.response.body.data.accessToken}}
 
 
-### 1.3 Đăng nhập lấy Token cho Quản trị viên Tenant B (charlie_tenant_b)
+### 1.4 Đăng nhập Quản trị viên Đơn vị B (charlie_tenant_b)
 # @name loginTenantB
 POST {{baseUrl}}/api/auth/token
 Content-Type: {{contentType}}
 
 {
   "username": "charlie_tenant_b",
-  "role": "Admin",
   "tenantId": "tenant-b"
 }
 
@@ -50,230 +61,155 @@ Content-Type: {{contentType}}
 @tenantBToken = {{loginTenantB.response.body.data.accessToken}}
 
 
-### 1.4 Kiểm tra thông tin tài khoản hiện tại từ Token (/api/auth/me)
+### 1.5 Kiểm tra thông tin tài khoản hiện tại từ Token (/api/auth/me)
 # @name getCurrentUser
 GET {{baseUrl}}/api/auth/me
-Authorization: Bearer {{managerToken}}
+Authorization: Bearer {{adminToken}}
 
 
 ###############################################################################
-# 2. IDEMPOTENCY-KEY & ORDER CREATION (Happy Path)
+# 2. DYNAMIC ROLES & UI PERMISSION MANAGEMENT (DÀNH CHO UI ĐƠN VỊ TÙY BIẾN)
 ###############################################################################
-### 2.1 Tạo đơn hàng với Header Idempotency-Key (Lần 1 - Thành công 201)
-# @name createOrder1
-POST {{baseUrl}}/api/orders/create
-Authorization: Bearer {{managerToken}}
+
+### 2.1 [UI] Lấy danh mục tất cả quyền hạn chuẩn phân theo Module để hiển thị cây checkbox
+# @name getUiPermissions
+GET {{baseUrl}}/api/roles/permissions
+Authorization: Bearer {{adminToken}}
+
+
+### 2.2 Lấy danh sách các vai trò động của đơn vị hiện tại
+# @name getTenantRoles
+GET {{baseUrl}}/api/roles
+Authorization: Bearer {{adminToken}}
+
+
+### 2.3 [Admin Đơn vị] Tự tạo vai trò động mới trên UI: "NhanVienKeToan" (Chỉ cho phép Xem và Lập đơn)
+# @name createCustomRole
+POST {{baseUrl}}/api/roles
+Authorization: Bearer {{adminToken}}
 Content-Type: {{contentType}}
-X-Correlation-Id: trace-req-0001
-Idempotency-Key: idempotency-uuid-00000001
 
 {
-  "customerName": "John Smith",
-  "customerEmail": "john.smith@example.com",
+  "name": "NhanVienKeToan",
+  "description": "Vai trò kế toán viên chỉ xem và tạo hóa đơn",
+  "permissions": [
+    "Orders.Read",
+    "Orders.Create"
+  ]
+}
+
+### Lưu ID vai trò động vừa tạo
+@customRoleId = {{createCustomRole.response.body.data.id}}
+
+
+### 2.4 [Admin Đơn vị] Gán vai trò "NhanVienKeToan" cho nhân sự mới "david_accountant"
+# @name assignUserRole
+POST {{baseUrl}}/api/roles/assign
+Authorization: Bearer {{adminToken}}
+Content-Type: {{contentType}}
+
+{
+  "userId": "david_accountant",
+  "roleIds": [
+    "{{customRoleId}}"
+  ]
+}
+
+
+### 2.5 Nhân sự "david_accountant" đăng nhập vào đơn vị (Nhận quyền động từ DB)
+# @name loginDavid
+POST {{baseUrl}}/api/auth/token
+Content-Type: {{contentType}}
+
+{
+  "username": "david_accountant",
+  "tenantId": "default-tenant"
+}
+
+### Lưu Token của David
+@davidToken = {{loginDavid.response.body.data.accessToken}}
+
+
+###############################################################################
+# 3. KIỂM TRA PHÂN QUYỀN ĐỘNG & BẢO MẬT API
+###############################################################################
+
+### 3.1 David tạo đơn hàng mới với Idempotency-Key (HỢP LỆ vì có Orders.Create)
+# @name davidCreateOrder
+POST {{baseUrl}}/api/orders/create
+Authorization: Bearer {{davidToken}}
+Idempotency-Key: david-idem-001
+Content-Type: {{contentType}}
+
+{
+  "customerName": "Công ty TNHH Giải Pháp Số",
+  "customerEmail": "contact@digital.vn",
   "items": [
     {
-      "productName": "Laptop Dell XPS",
-      "sku": "SKU-LAP-001",
+      "productName": "Gói phần mềm ERP Enterprise",
+      "sku": "SKU-ERP-01",
       "quantity": 1,
-      "unitPrice": 999.99
-    },
-    {
-      "productName": "Wireless Mouse",
-      "sku": "SKU-MOU-002",
-      "quantity": 2,
-      "unitPrice": 29.99
+      "unitPrice": 1200.00
     }
   ]
 }
 
-### Lưu Order ID 1
-@orderId1 = {{createOrder1.response.body.data.id}}
+### Lưu Order ID do David tạo
+@davidOrderId = {{davidCreateOrder.response.body.data.id}}
 
 
-### 2.2 Test Chống Click Đúp: Gửi lại y hệt với cùng Idempotency-Key (Trả về kết quả từ Cache ngay lập tức!)
-# @name createOrder1Duplicate
-POST {{baseUrl}}/api/orders/create
-Authorization: Bearer {{managerToken}}
+### 3.2 David thử gửi lệnh HỦY ĐƠN HÀNG -> Kết quả: 403 Forbidden (Do NhanVienKeToan không có Orders.Cancel)
+# @name davidCancelBlocked
+DELETE {{baseUrl}}/api/orders/{{davidOrderId}}/cancel
+Authorization: Bearer {{davidToken}}
+
+
+### 3.3 [Admin Đơn vị] Nâng cấp quyền: Tùy biến sửa vai trò "NhanVienKeToan" BỔ SUNG thêm quyền "Orders.Cancel"
+# @name updateRoleGrantCancel
+PUT {{baseUrl}}/api/roles/{{customRoleId}}
+Authorization: Bearer {{adminToken}}
 Content-Type: {{contentType}}
-Idempotency-Key: idempotency-uuid-00000001
 
 {
-  "customerName": "John Smith",
-  "customerEmail": "john.smith@example.com",
-  "items": [
-    {
-      "productName": "Laptop Dell XPS",
-      "sku": "SKU-LAP-001",
-      "quantity": 1,
-      "unitPrice": 999.99
-    }
+  "name": "NhanVienKeToan",
+  "description": "Kế toán viên được phân quyền hủy đơn trực tiếp",
+  "permissions": [
+    "Orders.Read",
+    "Orders.Create",
+    "Orders.Cancel"
   ]
 }
 
 
-###############################################################################
-# 3. VALIDATION FAILURE (Streamlined 400 Bad Request)
-###############################################################################
-# @name validationFailure
-POST {{baseUrl}}/api/orders/create
-Authorization: Bearer {{managerToken}}
-Content-Type: {{contentType}}
+### 3.4 David thực hiện HỦY ĐƠN HÀNG (Bước 1: Prompt xác nhận) -> Thành công ngay lập tức không cần đăng nhập lại!
+# @name davidCancelStep1
+DELETE {{baseUrl}}/api/orders/{{davidOrderId}}/cancel
+Authorization: Bearer {{davidToken}}
 
-{
-  "customerName": "",
-  "customerEmail": "invalid-email-format",
-  "items": [
-    {
-      "productName": "",
-      "sku": "",
-      "quantity": 0,
-      "unitPrice": -10.0
-    }
-  ]
-}
+
+### 3.5 David xác nhận HỦY ĐƠN HÀNG (Bước 2: isConfirmed = true) -> Thành công hủy đơn!
+# @name davidCancelStep2
+DELETE {{baseUrl}}/api/orders/{{davidOrderId}}/cancel?isConfirmed=true
+Authorization: Bearer {{davidToken}}
 
 
 ###############################################################################
-# 4. GET ORDER DETAILS (HybridCache L1/L2 Cache-Aside)
+# 4. MULTI-TENANCY DATA ISOLATION & AUDIT LOGS
 ###############################################################################
-### Lần 1: Cache Miss (Query Database)
-# @name getOrderByIdCacheMiss
-GET {{baseUrl}}/api/orders/{{orderId1}}
-Authorization: Bearer {{managerToken}}
-Accept: {{contentType}}
 
-### Lần 2: Cache HIT (Lấy trực tiếp từ RAM trong 0.01ms!)
-# @name getOrderByIdCacheHit
-GET {{baseUrl}}/api/orders/{{orderId1}}
-Authorization: Bearer {{managerToken}}
-Accept: {{contentType}}
+### 4.1 Tenant B truy cập đơn hàng của Tenant Default -> Kết quả: 404 Not Found (Cách ly dữ liệu 100%)
+# @name tenantBGetOtherTenantOrder
+GET {{baseUrl}}/api/orders/{{davidOrderId}}
+Authorization: Bearer {{tenantBToken}}
 
 
-###############################################################################
-# 5. CREATE ORDER 2 (For Confirmation Flow & RBAC Tests)
-###############################################################################
-# @name createOrder2
-POST {{baseUrl}}/api/orders/create
-Authorization: Bearer {{operatorToken}}
-Content-Type: {{contentType}}
-
-{
-  "customerName": "Jane Doe",
-  "customerEmail": "jane.doe@example.com",
-  "items": [
-    {
-      "productName": "Monitor 4K LG",
-      "sku": "SKU-MON-003",
-      "quantity": 1,
-      "unitPrice": 299.99
-    }
-  ]
-}
-
-@orderId2 = {{createOrder2.response.body.data.id}}
-
-
-###############################################################################
-# 6. GET PAGINATED ORDERS (1-Line Mapster Projection Paging)
-###############################################################################
-# @name listOrders
-GET {{baseUrl}}/api/orders/list?pageIndex=1&pageSize=10
-Authorization: Bearer {{managerToken}}
-Accept: {{contentType}}
-
-
-###############################################################################
-# 7. UPDATE ORDER STATUS (Auto Cache Invalidation via Wolverine AOP)
-###############################################################################
-# @name updateStatus
-PUT {{baseUrl}}/api/orders/{{orderId1}}/status
-Authorization: Bearer {{operatorToken}}
-Content-Type: {{contentType}}
-
-{
-  "status": "Confirmed"
-}
-
-
-###############################################################################
-# 8. RBAC PERMISSION CHECK: CANCEL ORDER
-###############################################################################
-### 8.1 Thử hủy đơn bằng quyền Operator (Sẽ bị chặn 403 Forbidden!)
-# @name cancelOrderForbidden
-DELETE {{baseUrl}}/api/orders/{{orderId2}}/cancel
-Authorization: Bearer {{operatorToken}}
-
-### 8.2 Hủy đơn bằng quyền Manager - Bước 1 (Trả về REQUIRES_CONFIRMATION)
-# @name cancelOrderStep1
-DELETE {{baseUrl}}/api/orders/{{orderId2}}/cancel
-Authorization: Bearer {{managerToken}}
-
-### 8.3 Hủy đơn bằng quyền Manager - Bước 2 (Bấm OK -> isConfirmed=true)
-# @name cancelOrderStep2
-DELETE {{baseUrl}}/api/orders/{{orderId2}}/cancel?isConfirmed=true
-Authorization: Bearer {{managerToken}}
-
-
-###############################################################################
-# 9. GET ORDER STATISTICS (HybridCache 30s TTL)
-###############################################################################
-# @name getStatistics
-GET {{baseUrl}}/api/orders/statistics/summary
-Authorization: Bearer {{managerToken}}
-
-
-###############################################################################
-# 10. GET AUDIT LOGS (Chỉ Admin mới có quyền xem)
-###############################################################################
+### 4.2 Lấy danh sách Audit Logs (Yêu cầu quyền AuditLogs.Read)
 # @name getAuditLogs
 GET {{baseUrl}}/api/auditlogs/list?pageIndex=1&pageSize=10
-Authorization: Bearer {{tenantBToken}}
+Authorization: Bearer {{adminToken}}
 
 
-###############################################################################
-# 11. MULTI-TENANCY ISOLATION TEST (Tenant B vs Default Tenant)
-###############################################################################
-### 11.1 Tạo đơn hàng cho Tenant B (Tự động trích xuất TenantId từ JWT Token)
-# @name createTenantBOrder
-POST {{baseUrl}}/api/orders/create
-Authorization: Bearer {{tenantBToken}}
-Content-Type: {{contentType}}
-
-{
-  "customerName": "VIP Client (Tenant B)",
-  "customerEmail": "vip@tenant-b.com",
-  "items": [
-    {
-      "productName": "Enterprise Server Rack",
-      "sku": "SKU-SRV-999",
-      "quantity": 1,
-      "unitPrice": 4999.00
-    }
-  ]
-}
-
-### 11.2 Query Tenant B: Chỉ thấy đơn hàng của Tenant B
-# @name listTenantBOrders
-GET {{baseUrl}}/api/orders/list?pageIndex=1&pageSize=10
-Authorization: Bearer {{tenantBToken}}
-
-### 11.3 Query Default Tenant: KHÔNG THỂ THẤY đơn hàng của Tenant B
-# @name listDefaultTenantOrders
-GET {{baseUrl}}/api/orders/list?pageIndex=1&pageSize=10
-Authorization: Bearer {{managerToken}}
-
-
-###############################################################################
-# 12. KUBERNETES OBSERVABILITY & HEALTH CHECK PROBES (Public)
-###############################################################################
-### Kubernetes Liveness Probe
-# @name k8sLiveness
-GET {{baseUrl}}/health/live
-
-### Kubernetes Readiness Probe
-# @name k8sReadiness
-GET {{baseUrl}}/health/ready
-
-### Deep System Telemetry & Metrics
-# @name deepHealthTelemetry
-GET {{baseUrl}}/health
+### 4.3 Xem thống kê tổng hợp đơn hàng (Yêu cầu quyền Orders.Read)
+# @name getStatistics
+GET {{baseUrl}}/api/orders/statistics/summary
+Authorization: Bearer {{adminToken}}

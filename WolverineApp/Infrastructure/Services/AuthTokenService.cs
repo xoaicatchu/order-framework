@@ -5,6 +5,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.IdentityModel.Tokens;
 using WolverineApp.Application.Common.Interfaces;
 using WolverineApp.Application.DTOs.Auth;
+using WolverineApp.Domain.Identity;
 
 namespace WolverineApp.Infrastructure.Services;
 
@@ -17,7 +18,7 @@ public class AuthTokenService : IAuthTokenService
         _configuration = configuration;
     }
 
-    public TokenResponse GenerateToken(string userId, string tenantId, string role, IEnumerable<string>? permissions = null)
+    public TokenResponse GenerateToken(string userId, string tenantId, bool isRoot, IEnumerable<string>? permissions = null)
     {
         var secretKey = _configuration["Jwt:SecretKey"] ?? "ThisIsASecretKeyForJwtAuthenticationInEnterpriseSystem123456!";
         var issuer = _configuration["Jwt:Issuer"] ?? "EnterpriseDistributedCore";
@@ -32,17 +33,26 @@ public class AuthTokenService : IAuthTokenService
             new(JwtRegisteredClaimNames.Sub, userId),
             new(ClaimTypes.NameIdentifier, userId),
             new(ClaimTypes.Name, userId),
-            new(ClaimTypes.Role, role),
             new("tenant_id", tenantId),
             new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
         };
 
-        if (permissions != null)
+        var permissionList = permissions?.ToList() ?? [];
+
+        if (isRoot)
         {
-            foreach (var perm in permissions)
+            claims.Add(new Claim("is_root", "true"));
+            claims.Add(new Claim(ClaimTypes.Role, "SystemAdmin"));
+            claims.Add(new Claim("permission", SystemPermissions.SystemRoot));
+            if (!permissionList.Contains(SystemPermissions.SystemRoot))
             {
-                claims.Add(new Claim("permission", perm));
+                permissionList.Add(SystemPermissions.SystemRoot);
             }
+        }
+
+        foreach (var perm in permissionList)
+        {
+            claims.Add(new Claim("permission", perm));
         }
 
         var expires = DateTime.UtcNow.AddMinutes(lifetimeMinutes);
@@ -63,8 +73,9 @@ public class AuthTokenService : IAuthTokenService
             TokenType: "Bearer",
             ExpiresInSeconds: lifetimeMinutes * 60,
             UserId: userId,
-            Role: role,
-            TenantId: tenantId
+            TenantId: tenantId,
+            IsRoot: isRoot,
+            Permissions: permissionList
         );
     }
 }

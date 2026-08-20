@@ -9,7 +9,7 @@ using WolverineApp.Application.DTOs.Orders;
 using WolverineApp.Application.Queries.Orders.GetOrderById;
 using WolverineApp.Application.Queries.Orders.GetOrderStatistics;
 using WolverineApp.Application.Queries.Orders.ListOrders;
-using WolverineApp.Domain.Common;
+using WolverineApp.Domain.Identity;
 
 namespace WolverineApp.Controllers;
 
@@ -26,10 +26,10 @@ public class OrdersController : ControllerBase
     }
 
     /// <summary>
-    /// [Command] Tạo đơn hàng mới (Hỗ trợ Idempotency-Key chống click đúp)
+    /// [Command] Tạo đơn hàng mới (Yêu cầu quyền Orders.Create)
     /// </summary>
     [HttpPost("create")]
-    [Authorize(Policy = Permissions.Orders.Create)]
+    [Authorize(Policy = SystemPermissions.OrdersCreate)]
     public async Task<IActionResult> CreateOrder([FromBody] CreateOrderCommand command)
     {
         var response = await _bus.InvokeAsync<OrderDto>(command);
@@ -37,10 +37,10 @@ public class OrdersController : ControllerBase
     }
 
     /// <summary>
-    /// [Query] Lấy chi tiết đơn hàng theo ID
+    /// [Query] Lấy chi tiết đơn hàng theo ID (Yêu cầu quyền Orders.Read)
     /// </summary>
     [HttpGet("{id:guid}")]
-    [Authorize(Policy = Permissions.Orders.Read)]
+    [Authorize(Policy = SystemPermissions.OrdersRead)]
     public async Task<IActionResult> GetOrder(Guid id)
     {
         var response = await _bus.InvokeAsync<OrderDto>(new GetOrderByIdQuery(id));
@@ -48,10 +48,10 @@ public class OrdersController : ControllerBase
     }
 
     /// <summary>
-    /// [Query] Lấy danh sách đơn hàng có phân trang
+    /// [Query] Lấy danh sách đơn hàng có phân trang (Yêu cầu quyền Orders.Read)
     /// </summary>
     [HttpGet("list")]
-    [Authorize(Policy = Permissions.Orders.Read)]
+    [Authorize(Policy = SystemPermissions.OrdersRead)]
     public async Task<IActionResult> GetAllOrders(
         [FromQuery] int pageIndex = 1,
         [FromQuery] int pageSize = 10,
@@ -63,10 +63,10 @@ public class OrdersController : ControllerBase
     }
 
     /// <summary>
-    /// [Command] Cập nhật trạng thái đơn hàng
+    /// [Command] Cập nhật trạng thái đơn hàng (Yêu cầu quyền Orders.Update)
     /// </summary>
     [HttpPut("{id:guid}/status")]
-    [Authorize(Policy = Permissions.Orders.Update)]
+    [Authorize(Policy = SystemPermissions.OrdersUpdate)]
     public async Task<IActionResult> UpdateOrderStatus(Guid id, [FromBody] UpdateOrderStatusRequest request)
     {
         var response = await _bus.InvokeAsync<OrderDto>(new UpdateOrderStatusCommand(id, request.Status));
@@ -74,10 +74,10 @@ public class OrdersController : ControllerBase
     }
 
     /// <summary>
-    /// [Command] Hủy đơn hàng (Yêu cầu quyền Manager/Admin + Xác nhận 2 bước)
+    /// [Command] Hủy đơn hàng (Yêu cầu quyền Orders.Cancel + Xác nhận 2 bước)
     /// </summary>
     [HttpDelete("{id:guid}/cancel")]
-    [Authorize(Policy = Permissions.Orders.Cancel)]
+    [Authorize(Policy = SystemPermissions.OrdersCancel)]
     public async Task<IActionResult> CancelOrder(Guid id, [FromQuery] bool isConfirmed = false)
     {
         var response = await _bus.InvokeAsync<OrderDto>(new CancelOrderCommand(id, isConfirmed));
@@ -85,10 +85,10 @@ public class OrdersController : ControllerBase
     }
 
     /// <summary>
-    /// [Query] Lấy thống kê tổng hợp đơn hàng
+    /// [Query] Lấy thống kê tổng hợp đơn hàng (Yêu cầu quyền Orders.Read)
     /// </summary>
     [HttpGet("statistics/summary")]
-    [Authorize(Policy = Permissions.Orders.Read)]
+    [Authorize(Policy = SystemPermissions.OrdersRead)]
     public async Task<IActionResult> GetOrderStatistics()
     {
         var response = await _bus.InvokeAsync<OrderStatisticsDto>(new GetOrderStatisticsQuery());

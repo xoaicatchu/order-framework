@@ -4,11 +4,11 @@ using Wolverine;
 using WolverineApp.Application.Common.Models;
 using WolverineApp.Application.DTOs.AuditLogs;
 using WolverineApp.Application.Queries.AuditLogs.GetAuditLogs;
-using WolverineApp.Domain.Common;
+using WolverineApp.Domain.Identity;
 
 namespace WolverineApp.Controllers;
 
-[Authorize(Policy = Permissions.AuditLogs.Read)]
+[Authorize(Policy = SystemPermissions.AuditLogsRead)]
 [ApiController]
 [Route("api/[controller]")]
 public class AuditLogsController : ControllerBase
@@ -21,7 +21,7 @@ public class AuditLogsController : ControllerBase
     }
 
     /// <summary>
-    /// [Query] Lấy danh sách lịch sử Audit Logs có phân trang (Yêu cầu quyền Admin)
+    /// [Query] Lấy danh sách lịch sử Audit Logs có phân trang
     /// </summary>
     [HttpGet("list")]
     public async Task<IActionResult> GetAuditLogs(

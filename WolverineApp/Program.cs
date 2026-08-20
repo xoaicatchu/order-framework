@@ -2,6 +2,7 @@ using System.Text;
 using System.Threading.RateLimiting;
 using JasperFx.CodeGeneration.Model;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.RateLimiting;
@@ -13,7 +14,8 @@ using Serilog;
 using Wolverine;
 using Wolverine.FluentValidation;
 using WolverineApp.Application.Common.Interfaces;
-using WolverineApp.Domain.Common;
+using WolverineApp.Domain.Identity;
+using WolverineApp.Infrastructure.Auth;
 using WolverineApp.Infrastructure.BackgroundServices;
 using WolverineApp.Infrastructure.Data;
 using WolverineApp.Infrastructure.Data.Interceptors;
@@ -67,41 +69,18 @@ builder.Services.AddAuthentication(options =>
     };
 });
 
-// 4. Security & IAM: RBAC Policy-Based Authorization
+// 4. Security & IAM: Dynamic RBAC Policy-Based Authorization
+builder.Services.AddScoped<IPermissionService, PermissionService>();
+builder.Services.AddSingleton<IAuthorizationHandler, PermissionAuthorizationHandler>();
+
 builder.Services.AddAuthorization(options =>
 {
-    options.AddPolicy(Permissions.Orders.Read, policy =>
-        policy.RequireAssertion(ctx =>
-            ctx.User.IsInRole(Roles.Admin) ||
-            ctx.User.IsInRole(Roles.Manager) ||
-            ctx.User.IsInRole(Roles.Operator) ||
-            ctx.User.IsInRole(Roles.Viewer) ||
-            ctx.User.HasClaim("permission", Permissions.Orders.Read)));
-
-    options.AddPolicy(Permissions.Orders.Create, policy =>
-        policy.RequireAssertion(ctx =>
-            ctx.User.IsInRole(Roles.Admin) ||
-            ctx.User.IsInRole(Roles.Manager) ||
-            ctx.User.IsInRole(Roles.Operator) ||
-            ctx.User.HasClaim("permission", Permissions.Orders.Create)));
-
-    options.AddPolicy(Permissions.Orders.Update, policy =>
-        policy.RequireAssertion(ctx =>
-            ctx.User.IsInRole(Roles.Admin) ||
-            ctx.User.IsInRole(Roles.Manager) ||
-            ctx.User.IsInRole(Roles.Operator) ||
-            ctx.User.HasClaim("permission", Permissions.Orders.Update)));
-
-    options.AddPolicy(Permissions.Orders.Cancel, policy =>
-        policy.RequireAssertion(ctx =>
-            ctx.User.IsInRole(Roles.Admin) ||
-            ctx.User.IsInRole(Roles.Manager) ||
-            ctx.User.HasClaim("permission", Permissions.Orders.Cancel)));
-
-    options.AddPolicy(Permissions.AuditLogs.Read, policy =>
-        policy.RequireAssertion(ctx =>
-            ctx.User.IsInRole(Roles.Admin) ||
-            ctx.User.HasClaim("permission", Permissions.AuditLogs.Read)));
+    // Đăng ký toàn bộ chính sách phân quyền động từ SystemPermissions
+    foreach (var perm in SystemPermissions.All)
+    {
+        options.AddPolicy(perm.Code, policy =>
+            policy.Requirements.Add(new PermissionRequirement(perm.Code)));
+    }
 });
 
 builder.Services.AddSingleton<IAuthTokenService, AuthTokenService>();
@@ -216,12 +195,13 @@ builder.Host.UseWolverine(opts =>
 
 var app = builder.Build();
 
-// 13. Auto-Migration on startup
+// 13. Auto-Creation & Dynamic RBAC Seed on startup
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-    db.Database.Migrate();
-    Log.Information("Database schema initialized and verified successfully");
+    db.Database.EnsureCreated();
+    await DbInitializer.SeedInitialDataAsync(db, app.Logger);
+    Log.Information("Database schema initialized and Dynamic RBAC seeded successfully");
 }
 
 // 14. HTTP Telemetry & Security Pipeline

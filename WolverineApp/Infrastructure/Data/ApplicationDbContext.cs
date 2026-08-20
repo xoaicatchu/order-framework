@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using WolverineApp.Application.Common.Interfaces;
 using WolverineApp.Domain.Audit;
 using WolverineApp.Domain.Common;
+using WolverineApp.Domain.Identity;
 using WolverineApp.Domain.Orders;
 using WolverineApp.Infrastructure.Data.Entities;
 
@@ -29,6 +30,11 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
     public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
     public DbSet<ProcessedMessage> ProcessedMessages => Set<ProcessedMessage>();
 
+    // Dynamic RBAC Entities
+    public DbSet<AppRole> Roles => Set<AppRole>();
+    public DbSet<AppRolePermission> RolePermissions => Set<AppRolePermission>();
+    public DbSet<AppUserRole> UserRoles => Set<AppUserRole>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -37,6 +43,11 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
         modelBuilder.Entity<Order>().HasQueryFilter(e => !e.IsDeleted && e.TenantId == _tenantProvider.TenantId);
         modelBuilder.Entity<OrderItem>().HasQueryFilter(e => !e.IsDeleted && e.TenantId == _tenantProvider.TenantId);
         modelBuilder.Entity<AuditLog>().HasQueryFilter(e => e.TenantId == _tenantProvider.TenantId);
+        
+        // Multi-Tenancy on Dynamic Roles (System Roles có thể truy cập được hoặc lọc theo Tenant)
+        modelBuilder.Entity<AppRole>().HasQueryFilter(e => !e.IsDeleted && (e.TenantId == _tenantProvider.TenantId || e.IsSystemRole));
+        modelBuilder.Entity<AppRolePermission>().HasQueryFilter(e => e.TenantId == _tenantProvider.TenantId || e.Role.IsSystemRole);
+        modelBuilder.Entity<AppUserRole>().HasQueryFilter(e => e.TenantId == _tenantProvider.TenantId);
 
         modelBuilder.Entity<Order>(entity =>
         {
@@ -94,6 +105,42 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
             entity.HasKey(e => e.Id);
             entity.Property(e => e.ConsumerName).IsRequired().HasMaxLength(255);
             entity.HasIndex(e => new { e.MessageId, e.ConsumerName }).IsUnique();
+        });
+
+        // Cấu hình bảng Role, RolePermission, UserRole
+        modelBuilder.Entity<AppRole>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Name).IsRequired().HasMaxLength(100);
+            entity.Property(e => e.Description).HasMaxLength(500);
+            entity.Property(e => e.TenantId).IsRequired().HasMaxLength(50);
+            entity.HasIndex(e => new { e.TenantId, e.Name }).IsUnique();
+
+            entity.HasMany(e => e.Permissions)
+                .WithOne(p => p.Role)
+                .HasForeignKey(p => p.RoleId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasMany(e => e.UserRoles)
+                .WithOne(u => u.Role)
+                .HasForeignKey(u => u.RoleId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<AppRolePermission>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.PermissionCode).IsRequired().HasMaxLength(100);
+            entity.Property(e => e.TenantId).IsRequired().HasMaxLength(50);
+            entity.HasIndex(e => new { e.RoleId, e.PermissionCode }).IsUnique();
+        });
+
+        modelBuilder.Entity<AppUserRole>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.UserId).IsRequired().HasMaxLength(100);
+            entity.Property(e => e.TenantId).IsRequired().HasMaxLength(50);
+            entity.HasIndex(e => new { e.TenantId, e.UserId, e.RoleId }).IsUnique();
         });
     }
 

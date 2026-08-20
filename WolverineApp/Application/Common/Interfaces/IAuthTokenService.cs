@@ -4,5 +4,5 @@ namespace WolverineApp.Application.Common.Interfaces;
 
 public interface IAuthTokenService
 {
-    TokenResponse GenerateToken(string userId, string tenantId, string role, IEnumerable<string>? permissions = null);
+    TokenResponse GenerateToken(string userId, string tenantId, bool isRoot, IEnumerable<string>? permissions = null);
 }

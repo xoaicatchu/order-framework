@@ -2,8 +2,9 @@ namespace WolverineApp.Application.DTOs.Auth;
 
 public record LoginRequest(
     string Username,
-    string? Role = "Manager",
-    string? TenantId = "default-tenant"
+    string? TenantId = "default-tenant",
+    bool IsRoot = false,
+    List<string>? Permissions = null
 );
 
 public record TokenResponse(
@@ -11,6 +12,7 @@ public record TokenResponse(
     string TokenType,
     int ExpiresInSeconds,
     string UserId,
-    string Role,
-    string TenantId
+    string TenantId,
+    bool IsRoot,
+    List<string> Permissions
 );

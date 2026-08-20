@@ -4,7 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 using WolverineApp.Application.Common.Interfaces;
 using WolverineApp.Application.Common.Models;
 using WolverineApp.Application.DTOs.Auth;
-using WolverineApp.Domain.Common;
+using WolverineApp.Domain.Identity;
 
 namespace WolverineApp.Controllers;
 
@@ -13,43 +13,50 @@ namespace WolverineApp.Controllers;
 public class AuthController : ControllerBase
 {
     private readonly IAuthTokenService _authTokenService;
+    private readonly IPermissionService _permissionService;
 
-    public AuthController(IAuthTokenService authTokenService)
+    public AuthController(
+        IAuthTokenService authTokenService,
+        IPermissionService permissionService)
     {
         _authTokenService = authTokenService;
+        _permissionService = permissionService;
     }
 
     /// <summary>
-    /// [Auth] Tạo JWT Bearer Token đăng nhập phục vụ phát triển và kiểm thử
+    /// [Auth] Đăng nhập và tạo JWT Bearer Token (Hỗ trợ Root User / Admin đơn vị / Nhân viên với quyền động từ Database)
     /// </summary>
     [AllowAnonymous]
     [HttpPost("token")]
-    public IActionResult GenerateToken([FromBody] LoginRequest request)
+    public async Task<IActionResult> GenerateToken([FromBody] LoginRequest request)
     {
-        var role = request.Role ?? Roles.Manager;
         var tenantId = request.TenantId ?? "default-tenant";
 
-        // Gán các permissions mặc định theo Role
-        var permissions = new List<string>();
-        if (role is Roles.Admin or Roles.Manager or Roles.Operator or Roles.Viewer)
+        // 1. Nếu là Root User (System Admin tối cao toàn hệ thống)
+        if (request.IsRoot)
         {
-            permissions.Add(Permissions.Orders.Read);
-        }
-        if (role is Roles.Admin or Roles.Manager or Roles.Operator)
-        {
-            permissions.Add(Permissions.Orders.Create);
-            permissions.Add(Permissions.Orders.Update);
-        }
-        if (role is Roles.Admin or Roles.Manager)
-        {
-            permissions.Add(Permissions.Orders.Cancel);
-        }
-        if (role is Roles.Admin)
-        {
-            permissions.Add(Permissions.AuditLogs.Read);
+            var rootResponse = _authTokenService.GenerateToken(
+                request.Username,
+                "system",
+                isRoot: true,
+                new[] { SystemPermissions.SystemRoot }
+            );
+            return Ok(ApiResponse<TokenResponse>.Ok(rootResponse, "Đăng nhập Root User hệ thống thành công."));
         }
 
-        var response = _authTokenService.GenerateToken(request.Username, tenantId, role, permissions);
+        // 2. Nếu có danh sách quyền truyền trực tiếp (dùng cho test nhanh hoặc custom)
+        List<string> permissions;
+        if (request.Permissions != null && request.Permissions.Count > 0)
+        {
+            permissions = request.Permissions;
+        }
+        else
+        {
+            // Truy vấn quyền động từ Database của đơn vị (Dynamic RBAC)
+            permissions = await _permissionService.GetUserPermissionsAsync(request.Username, tenantId);
+        }
+
+        var response = _authTokenService.GenerateToken(request.Username, tenantId, isRoot: false, permissions);
         return Ok(ApiResponse<TokenResponse>.Ok(response, "Đăng nhập thành công."));
     }
 
@@ -61,12 +68,16 @@ public class AuthController : ControllerBase
     public IActionResult GetCurrentUser()
     {
         var claims = User.Claims.Select(c => new { c.Type, c.Value }).ToList();
+        var isRoot = string.Equals(User.FindFirst("is_root")?.Value, "true", StringComparison.OrdinalIgnoreCase);
+        var permissions = User.FindAll("permission").Select(c => c.Value).ToList();
+
         var userInfo = new
         {
             UserId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value,
             Username = User.Identity?.Name,
-            Role = User.FindFirst(ClaimTypes.Role)?.Value,
             TenantId = User.FindFirst("tenant_id")?.Value,
+            IsRoot = isRoot,
+            Permissions = permissions,
             Claims = claims
         };
 
