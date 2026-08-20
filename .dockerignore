@@ -1,0 +1,16 @@
+.git
+.github
+.vs
+**/bin/
+**/obj/
+**/*.db
+**/*.db-shm
+**/*.db-wal
+**/logs/
+**/publish-*-validation/
+**/publish-final-validation/
+*.user
+*.suo
+*.pdb
+output_*.html
+output_*.pdf

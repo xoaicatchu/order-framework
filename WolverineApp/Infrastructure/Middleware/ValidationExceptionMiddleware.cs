@@ -33,6 +33,11 @@ public class ValidationExceptionMiddleware
             _logger.LogWarning("Validation failed: {Errors}", ex.Errors);
             await HandleValidationExceptionAsync(context, ex);
         }
+        catch (UnauthorizedAccessException ex)
+        {
+            _logger.LogWarning("Authorization failure: {Message}", ex.Message);
+            await WriteResponseAsync(context, StatusCodes.Status403Forbidden, ApiResponse<object>.Fail("Forbidden.", "FORBIDDEN"));
+        }
         catch (InvalidOperationException ex)
         {
             _logger.LogWarning("Invalid operation: {Message}", ex.Message);

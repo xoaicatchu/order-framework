@@ -2,7 +2,7 @@ using WolverineApp.Domain.Common;
 
 namespace WolverineApp.Domain.Identity;
 
-public class AppRolePermission : BaseEntity
+public class AppRolePermission : BaseEntity, IMultiTenant
 {
     public Guid RoleId { get; set; }
     public AppRole Role { get; set; } = null!;

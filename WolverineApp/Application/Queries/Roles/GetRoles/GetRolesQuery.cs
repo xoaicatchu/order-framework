@@ -1,7 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using WolverineApp.Application.Common.Interfaces;
 using WolverineApp.Application.DTOs.Roles;
-using WolverineApp.Infrastructure.Data;
+using WolverineApp.Domain.Identity;
 
 namespace WolverineApp.Application.Queries.Roles.GetRoles;
 
@@ -9,18 +9,17 @@ public record GetRolesQuery : IQuery<List<RoleDto>>;
 
 public class GetRolesQueryHandler
 {
-    private readonly ApplicationDbContext _dbContext;
+    private readonly IUnitOfWork _unitOfWork;
 
-    public GetRolesQueryHandler(ApplicationDbContext dbContext)
+    public GetRolesQueryHandler(IUnitOfWork unitOfWork)
     {
-        _dbContext = dbContext;
+        _unitOfWork = unitOfWork;
     }
 
     public async Task<List<RoleDto>> Handle(GetRolesQuery query, CancellationToken cancellationToken)
     {
         // Global query filter tự động lọc vai trò theo TenantId hiện tại của người dùng
-        var roles = await _dbContext.Roles
-            .AsNoTracking()
+        var roles = await _unitOfWork.GetRepository<AppRole>().Query()
             .Include(r => r.Permissions)
             .OrderByDescending(r => r.CreatedAt)
             .ToListAsync(cancellationToken);

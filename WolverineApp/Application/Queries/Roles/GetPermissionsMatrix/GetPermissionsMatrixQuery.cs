@@ -1,7 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using WolverineApp.Application.Common.Interfaces;
 using WolverineApp.Application.DTOs.Roles;
-using WolverineApp.Infrastructure.Data;
+using WolverineApp.Domain.Identity;
 
 namespace WolverineApp.Application.Queries.Roles.GetPermissionsMatrix;
 
@@ -9,17 +9,16 @@ public record GetPermissionsMatrixQuery : IQuery<PermissionMatrixDto>;
 
 public class GetPermissionsMatrixQueryHandler
 {
-    private readonly ApplicationDbContext _dbContext;
+    private readonly IUnitOfWork _unitOfWork;
 
-    public GetPermissionsMatrixQueryHandler(ApplicationDbContext dbContext)
+    public GetPermissionsMatrixQueryHandler(IUnitOfWork unitOfWork)
     {
-        _dbContext = dbContext;
+        _unitOfWork = unitOfWork;
     }
 
     public async Task<PermissionMatrixDto> Handle(GetPermissionsMatrixQuery query, CancellationToken cancellationToken)
     {
-        var permissions = await _dbContext.Permissions
-            .AsNoTracking()
+        var permissions = await _unitOfWork.GetRepository<AppPermission>().Query()
             .Where(p => !p.IsSystem)
             .ToListAsync(cancellationToken);
 

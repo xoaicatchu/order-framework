@@ -23,6 +23,8 @@ logs/
 *.log
 *.tmp
 *.bak
+**/publish-*-validation/
+**/publish-validation-*/
 
 ## OS Generated
 Thumbs.db

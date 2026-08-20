@@ -29,8 +29,12 @@ public class CorrelationIdMiddleware
                        ?? "unknown";
 
         var userAgent = context.Request.Headers.UserAgent.ToString();
-        var tenantId = context.Request.Headers["X-Tenant-Id"].FirstOrDefault() ?? "default-tenant";
-        var userId = context.Request.Headers["X-User-Id"].FirstOrDefault() ?? "system";
+        var tenantId = context.User.FindFirst("tenant_id")?.Value
+                       ?? context.User.FindFirst("tenant")?.Value
+                       ?? "anonymous";
+        var userId = context.User.FindFirst("sub")?.Value
+                     ?? context.User.Identity?.Name
+                     ?? "anonymous";
 
         using (LogContext.PushProperty("CorrelationId", correlationId))
         using (LogContext.PushProperty("ClientIp", clientIp))

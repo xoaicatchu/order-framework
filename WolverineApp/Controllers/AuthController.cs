@@ -3,7 +3,6 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using WolverineApp.Application.Common.Interfaces;
 using WolverineApp.Application.Common.Models;
-using WolverineApp.Application.DTOs.Auth;
 using WolverineApp.Infrastructure.Auth;
 
 namespace WolverineApp.Controllers;
@@ -12,40 +11,22 @@ namespace WolverineApp.Controllers;
 [Route("api/[controller]")]
 public class AuthController : ControllerBase
 {
-    private readonly IAuthTokenService _authTokenService;
     private readonly IPermissionService _permissionService;
 
-    public AuthController(
-        IAuthTokenService authTokenService,
-        IPermissionService permissionService)
+    public AuthController(IPermissionService permissionService)
     {
-        _authTokenService = authTokenService;
         _permissionService = permissionService;
     }
 
     [AllowAnonymous]
     [HttpPost("token")]
-    public async Task<IActionResult> GenerateToken([FromBody] LoginRequest request)
+    public IActionResult GenerateToken()
     {
-        var tenantId = request.TenantId ?? "default-tenant";
-
-        if (request.IsRoot)
-        {
-            var rootResponse = _authTokenService.GenerateToken(
-                request.Username,
-                "system",
-                isRoot: true,
-                new[] { PermissionDiscoveryService.RootPermissionCode }
-            );
-            return Ok(ApiResponse<TokenResponse>.Ok(rootResponse, "Root authentication successful."));
-        }
-
-        var permissions = (request.Permissions != null && request.Permissions.Count > 0)
-            ? request.Permissions
-            : await _permissionService.GetUserPermissionsAsync(request.Username, tenantId);
-
-        var response = _authTokenService.GenerateToken(request.Username, tenantId, isRoot: false, permissions);
-        return Ok(ApiResponse<TokenResponse>.Ok(response, "Authentication successful."));
+        return StatusCode(
+            StatusCodes.Status410Gone,
+            ApiResponse<object>.Fail(
+                "Local token issuance is disabled. Authenticate with the configured identity provider and send its bearer token.",
+                "AUTH_PROVIDER_REQUIRED"));
     }
 
     [Authorize]
@@ -56,13 +37,16 @@ public class AuthController : ControllerBase
         var isRoot = string.Equals(User.FindFirst("is_root")?.Value, "true", StringComparison.OrdinalIgnoreCase);
         var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value
             ?? User.FindFirst("sub")?.Value
-            ?? User.Identity?.Name
-            ?? "system";
-        var tenantId = User.FindFirst("tenant_id")?.Value ?? "default-tenant";
+            ?? User.Identity?.Name;
+        var tenantId = User.FindFirst("tenant_id")?.Value
+            ?? User.FindFirst("tenant")?.Value;
 
-        var permissions = isRoot
-            ? new List<string> { PermissionDiscoveryService.RootPermissionCode }
-            : await _permissionService.GetUserPermissionsAsync(userId, tenantId);
+        if (string.IsNullOrWhiteSpace(userId) || string.IsNullOrWhiteSpace(tenantId))
+        {
+            return Unauthorized(ApiResponse<object>.Fail("The access token must contain sub and tenant_id claims.", "INVALID_IDENTITY"));
+        }
+
+        var permissions = await _permissionService.GetUserPermissionsAsync(userId, tenantId);
 
         var userInfo = new
         {

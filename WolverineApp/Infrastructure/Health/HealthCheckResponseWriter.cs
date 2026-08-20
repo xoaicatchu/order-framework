@@ -9,25 +9,12 @@ public static class HealthCheckResponseWriter
     {
         context.Response.ContentType = "application/json";
 
-        var response = new
-        {
-            status = report.Status.ToString(),
-            totalDurationMs = report.TotalDuration.TotalMilliseconds,
-            entries = report.Entries.Select(e => new
-            {
-                name = e.Key,
-                status = e.Value.Status.ToString(),
-                description = e.Value.Description,
-                durationMs = e.Value.Duration.TotalMilliseconds,
-                data = e.Value.Data,
-                exception = e.Value.Exception?.Message
-            })
-        };
+        var response = new { status = report.Status.ToString() };
 
         var json = JsonSerializer.Serialize(response, new JsonSerializerOptions
         {
             PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-            WriteIndented = true
+            WriteIndented = false
         });
 
         return context.Response.WriteAsync(json);

@@ -1,9 +1,9 @@
 using System.Reflection;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using WolverineApp.Application.Common.Interfaces;
 using Microsoft.Extensions.Logging;
 using WolverineApp.Domain.Identity;
-using WolverineApp.Infrastructure.Data;
 
 namespace WolverineApp.Infrastructure.Auth;
 
@@ -11,7 +11,7 @@ public static class PermissionDiscoveryService
 {
     public const string RootPermissionCode = "System:Root";
 
-    public static async Task DiscoverAndSyncPermissionsAsync(ApplicationDbContext dbContext, Assembly assembly, ILogger logger)
+    public static async Task DiscoverAndSyncPermissionsAsync(IUnitOfWork unitOfWork, Assembly assembly, ILogger logger)
     {
         var discoveredPermissions = new List<AppPermission>
         {
@@ -66,7 +66,8 @@ public static class PermissionDiscoveryService
             }
         }
 
-        var existingCodes = await dbContext.Permissions
+        var permissionRepository = unitOfWork.GetRepository<AppPermission>();
+        var existingCodes = await permissionRepository.Query()
             .Select(p => p.Code)
             .ToListAsync();
 
@@ -76,8 +77,8 @@ public static class PermissionDiscoveryService
 
         if (newPermissions.Count > 0)
         {
-            await dbContext.Permissions.AddRangeAsync(newPermissions);
-            await dbContext.SaveChangesAsync();
+            await permissionRepository.AddRangeAsync(newPermissions);
+            await unitOfWork.SaveChangesAsync();
             logger.LogInformation("Synced {Count} new permissions into database", newPermissions.Count);
         }
     }

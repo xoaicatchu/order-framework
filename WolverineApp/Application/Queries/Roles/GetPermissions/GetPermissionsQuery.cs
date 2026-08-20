@@ -1,7 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using WolverineApp.Application.Common.Interfaces;
 using WolverineApp.Application.DTOs.Roles;
-using WolverineApp.Infrastructure.Data;
+using WolverineApp.Domain.Identity;
 
 namespace WolverineApp.Application.Queries.Roles.GetPermissions;
 
@@ -9,17 +9,16 @@ public record GetPermissionsQuery : IQuery<List<PermissionDto>>;
 
 public class GetPermissionsQueryHandler
 {
-    private readonly ApplicationDbContext _dbContext;
+    private readonly IUnitOfWork _unitOfWork;
 
-    public GetPermissionsQueryHandler(ApplicationDbContext dbContext)
+    public GetPermissionsQueryHandler(IUnitOfWork unitOfWork)
     {
-        _dbContext = dbContext;
+        _unitOfWork = unitOfWork;
     }
 
     public async Task<List<PermissionDto>> Handle(GetPermissionsQuery query, CancellationToken cancellationToken)
     {
-        var permissions = await _dbContext.Permissions
-            .AsNoTracking()
+        var permissions = await _unitOfWork.GetRepository<AppPermission>().Query()
             .OrderBy(p => p.Module)
             .ThenBy(p => p.Resource)
             .ThenBy(p => p.Action)

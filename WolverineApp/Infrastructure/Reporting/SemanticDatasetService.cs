@@ -1,35 +1,33 @@
 using System.Data;
 using System.Data.Common;
+using System.Text.RegularExpressions;
 using System.Text;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using WolverineApp.Application.Common.Interfaces;
 using WolverineApp.Application.Common.Reporting;
 using WolverineApp.Domain.Reporting;
-using WolverineApp.Infrastructure.Data;
 
 namespace WolverineApp.Infrastructure.Reporting;
 
 public class SemanticDatasetService : ISemanticDatasetService
 {
-    private readonly IServiceScopeFactory _scopeFactory;
+    private readonly IUnitOfWork _unitOfWork;
     private readonly ILogger<SemanticDatasetService> _logger;
 
     public SemanticDatasetService(
-        IServiceScopeFactory scopeFactory,
+        IUnitOfWork unitOfWork,
         ILogger<SemanticDatasetService> logger)
     {
-        _scopeFactory = scopeFactory;
+        _unitOfWork = unitOfWork;
         _logger = logger;
     }
 
     public async Task<List<SemanticDatasetDto>> GetAvailableDatasetsAsync(CancellationToken cancellationToken = default)
     {
-        using var scope = _scopeFactory.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-
-        var datasets = await db.SemanticDatasets
+        var repository = _unitOfWork.GetRepository<SemanticDataset>();
+        var datasets = await repository.Query()
             .Where(d => d.IsActive && !d.IsDeleted)
             .OrderBy(d => d.Category)
             .ThenBy(d => d.Name)
@@ -47,10 +45,8 @@ public class SemanticDatasetService : ISemanticDatasetService
 
     public async Task<SemanticDatasetDto?> GetDatasetByCodeAsync(string datasetCode, CancellationToken cancellationToken = default)
     {
-        using var scope = _scopeFactory.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-
-        var ds = await db.SemanticDatasets
+        var repository = _unitOfWork.GetRepository<SemanticDataset>();
+        var ds = await repository.Query()
             .FirstOrDefaultAsync(d => d.Code == datasetCode && d.IsActive && !d.IsDeleted, cancellationToken);
 
         if (ds is null) return null;
@@ -66,10 +62,8 @@ public class SemanticDatasetService : ISemanticDatasetService
         Dictionary<string, object?> filterCriteria,
         CancellationToken cancellationToken = default)
     {
-        using var scope = _scopeFactory.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-
-        var dataset = await db.SemanticDatasets
+        var repository = _unitOfWork.GetRepository<SemanticDataset>();
+        var dataset = await repository.Query()
             .FirstOrDefaultAsync(d => d.Code == datasetCode && d.IsActive && !d.IsDeleted, cancellationToken);
 
         if (dataset is null)
@@ -78,15 +72,31 @@ public class SemanticDatasetService : ISemanticDatasetService
         }
 
         var validFields = JsonSerializer.Deserialize<List<SemanticFieldDefinition>>(dataset.FieldsMetadataJson, new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? [];
-        var fieldDict = validFields.ToDictionary(f => f.Key, f => f, StringComparer.OrdinalIgnoreCase);
+        var fieldDict = validFields
+            .Where(f => IsSafeIdentifier(f.Key))
+            .ToDictionary(f => f.Key, f => f, StringComparer.OrdinalIgnoreCase);
+
+        if (!dataset.BaseQuerySql.Contains("@TenantId", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException($"Dataset '{datasetCode}' does not declare the required @TenantId predicate.");
+        }
+
+        var projectedFields = selectedFields
+            .Where(fieldDict.ContainsKey)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        if (projectedFields.Count == 0)
+        {
+            projectedFields = fieldDict.Keys.ToList();
+        }
 
         var queryBuilder = new StringBuilder();
-        queryBuilder.AppendLine("SELECT * FROM (");
+        queryBuilder.AppendLine($"SELECT {string.Join(", ", projectedFields.Select(QuoteIdentifier))} FROM (");
         queryBuilder.AppendLine(dataset.BaseQuerySql);
         queryBuilder.AppendLine(") AS BaseDataset");
         queryBuilder.AppendLine("WHERE 1=1");
 
-        var connection = db.Database.GetDbConnection();
+        var connection = _unitOfWork.GetDbConnection();
         if (connection.State != ConnectionState.Open)
         {
             await connection.OpenAsync(cancellationToken);
@@ -105,12 +115,12 @@ public class SemanticDatasetService : ISemanticDatasetService
 
             if (key.Equals("FromDate", StringComparison.OrdinalIgnoreCase) && DateTime.TryParse(value.ToString(), out var fromDate))
             {
-                queryBuilder.AppendLine("  AND CreatedAt >= @Param_FromDate");
+                queryBuilder.AppendLine($"  AND {QuoteIdentifier("CreatedAt")} >= @Param_FromDate");
                 AddParameter(command, "@Param_FromDate", fromDate.Date);
             }
             else if (key.Equals("ToDate", StringComparison.OrdinalIgnoreCase) && DateTime.TryParse(value.ToString(), out var toDate))
             {
-                queryBuilder.AppendLine("  AND CreatedAt <= @Param_ToDate");
+                queryBuilder.AppendLine($"  AND {QuoteIdentifier("CreatedAt")} <= @Param_ToDate");
                 AddParameter(command, "@Param_ToDate", toDate.Date.AddDays(1).AddTicks(-1));
             }
             else if (key.Equals("Status", StringComparison.OrdinalIgnoreCase))
@@ -122,23 +132,24 @@ public class SemanticDatasetService : ISemanticDatasetService
                     AddParameter(command, "@Param_Status", statusStr);
                 }
             }
-            else if (fieldDict.TryGetValue(key, out var fieldDef))
+            else if (fieldDict.TryGetValue(key, out var fieldDef) && fieldDef.Filterable)
             {
                 var paramName = $"@Param_{fieldDef.Key}";
                 if (fieldDef.Type == "string")
                 {
-                    queryBuilder.AppendLine($"  AND {fieldDef.Key} LIKE {paramName}");
+                    queryBuilder.AppendLine($"  AND {QuoteIdentifier(fieldDef.Key)} LIKE {paramName}");
                     AddParameter(command, paramName, $"%{value}%");
                 }
                 else
                 {
-                    queryBuilder.AppendLine($"  AND {fieldDef.Key} = {paramName}");
+                    queryBuilder.AppendLine($"  AND {QuoteIdentifier(fieldDef.Key)} = {paramName}");
                     AddParameter(command, paramName, value);
                 }
             }
         }
 
-        queryBuilder.AppendLine("ORDER BY CreatedAt DESC");
+        queryBuilder.AppendLine($"ORDER BY {QuoteIdentifier("CreatedAt")} DESC");
+        queryBuilder.AppendLine("LIMIT 10000");
 
         command.CommandText = queryBuilder.ToString();
         _logger.LogInformation("Executing Semantic Dataset query '{DatasetCode}' for tenant '{TenantId}'", datasetCode, tenantId);
@@ -284,4 +295,10 @@ public class SemanticDatasetService : ISemanticDatasetService
         param.Value = value ?? DBNull.Value;
         command.Parameters.Add(param);
     }
+
+    private static bool IsSafeIdentifier(string value)
+        => Regex.IsMatch(value, "^[A-Za-z_][A-Za-z0-9_]*$");
+
+    private static string QuoteIdentifier(string value)
+        => $"\"{value.Replace("\"", "\"\"", StringComparison.Ordinal)}\"";
 }

@@ -1,3 +1,5 @@
+using System.Data.Common;
+
 namespace WolverineApp.Application.Common.Interfaces;
 
 public interface IUnitOfWork : IDisposable, IAsyncDisposable
@@ -11,6 +13,8 @@ public interface IUnitOfWork : IDisposable, IAsyncDisposable
     /// Shorthand ngắn gọn tương tự DbContext.Set<T>()
     /// </summary>
     IRepository<T> Set<T>() where T : class;
+
+    DbConnection GetDbConnection();
 
     /// <summary>
     /// Lưu toàn bộ thay đổi trong phiên làm việc vào Database

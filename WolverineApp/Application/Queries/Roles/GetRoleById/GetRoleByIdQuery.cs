@@ -1,7 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using WolverineApp.Application.Common.Interfaces;
 using WolverineApp.Application.DTOs.Roles;
-using WolverineApp.Infrastructure.Data;
+using WolverineApp.Domain.Identity;
 
 namespace WolverineApp.Application.Queries.Roles.GetRoleById;
 
@@ -9,17 +9,16 @@ public record GetRoleByIdQuery(Guid Id) : IQuery<RoleDto>;
 
 public class GetRoleByIdQueryHandler
 {
-    private readonly ApplicationDbContext _dbContext;
+    private readonly IUnitOfWork _unitOfWork;
 
-    public GetRoleByIdQueryHandler(ApplicationDbContext dbContext)
+    public GetRoleByIdQueryHandler(IUnitOfWork unitOfWork)
     {
-        _dbContext = dbContext;
+        _unitOfWork = unitOfWork;
     }
 
     public async Task<RoleDto> Handle(GetRoleByIdQuery query, CancellationToken cancellationToken)
     {
-        var role = await _dbContext.Roles
-            .AsNoTracking()
+        var role = await _unitOfWork.GetRepository<AppRole>().Query()
             .Include(r => r.Permissions)
             .FirstOrDefaultAsync(r => r.Id == query.Id, cancellationToken);
 

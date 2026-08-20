@@ -15,7 +15,7 @@ public static class QueryableExtensions
         CancellationToken cancellationToken = default)
     {
         var page = pageIndex < 1 ? 1 : pageIndex;
-        var size = pageSize < 1 ? 10 : pageSize;
+        var size = pageSize < 1 ? 10 : Math.Min(pageSize, 100);
 
         var totalCount = await source.CountAsync(cancellationToken);
         var items = await source

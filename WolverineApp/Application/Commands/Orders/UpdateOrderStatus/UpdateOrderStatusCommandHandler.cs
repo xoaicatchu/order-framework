@@ -26,7 +26,27 @@ public class UpdateOrderStatusCommandHandler
             throw new KeyNotFoundException($"Order not found: {command.OrderId}");
 
         var newStatus = Enum.Parse<OrderStatus>(command.Status, true);
-        order.UpdateStatus(newStatus);
+        switch (newStatus)
+        {
+            case OrderStatus.Confirmed:
+                order.Confirm();
+                break;
+            case OrderStatus.Processing:
+                order.StartProcessing();
+                break;
+            case OrderStatus.Shipped:
+                order.Ship();
+                break;
+            case OrderStatus.Delivered:
+                order.Deliver();
+                break;
+            case OrderStatus.Pending:
+                throw new InvalidOperationException("An order cannot be moved back to Pending.");
+            case OrderStatus.Cancelled:
+                throw new InvalidOperationException("Use the cancel endpoint and Orders:Cancel permission to cancel an order.");
+            default:
+                throw new InvalidOperationException($"Unsupported order status '{command.Status}'.");
+        }
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 

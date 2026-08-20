@@ -1,19 +1,26 @@
+using System.Data;
+using System.Data.Common;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Wolverine;
-using WolverineApp.Infrastructure.Data;
+using WolverineApp.Application.Common.Interfaces;
+using WolverineApp.Infrastructure.Persistence.Models;
 
 namespace WolverineApp.Infrastructure.BackgroundServices;
 
 public class OutboxBackgroundProcessor : BackgroundService
 {
-    private readonly IServiceProvider _serviceProvider;
-    private readonly ILogger<OutboxBackgroundProcessor> _logger;
     private const int BatchSize = 20;
     private const int MaxRetries = 3;
+    private static readonly TimeSpan FallbackScanInterval = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan LeaseDuration = TimeSpan.FromMinutes(2);
+
+    private readonly IServiceProvider _serviceProvider;
+    private readonly ILogger<OutboxBackgroundProcessor> _logger;
+    private readonly IOutboxSignal _outboxSignal;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -22,46 +29,110 @@ public class OutboxBackgroundProcessor : BackgroundService
 
     public OutboxBackgroundProcessor(
         IServiceProvider serviceProvider,
-        ILogger<OutboxBackgroundProcessor> logger)
+        ILogger<OutboxBackgroundProcessor> logger,
+        IOutboxSignal outboxSignal)
     {
         _serviceProvider = serviceProvider;
         _logger = logger;
+        _outboxSignal = outboxSignal;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _logger.LogInformation("🚀 [Outbox Processor] Background service started successfully.");
+        _logger.LogInformation("Outbox processor started with signal wake-up and database lease.");
+
+        try
+        {
+            await ProcessAvailableBatchesAsync(stoppingToken);
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        {
+            return;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Initial outbox scan failed; fallback loop will retry.");
+        }
 
         while (!stoppingToken.IsCancellationRequested)
         {
             try
             {
-                await ProcessOutboxBatchAsync(stoppingToken);
+                try
+                {
+                    await _outboxSignal.WaitAsync(stoppingToken)
+                        .WaitAsync(FallbackScanInterval, stoppingToken);
+                }
+                catch (TimeoutException)
+                {
+                    // Fallback scan prevents lost signals from leaving messages pending.
+                }
+
+                await ProcessAvailableBatchesAsync(stoppingToken);
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                break;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "❌ [Outbox Processor] Error occurred while processing outbox batch: {Message}", ex.Message);
+                _logger.LogError(ex, "Outbox batch failed.");
             }
-
-            // Polling interval (chạy định kỳ mỗi 2 giây)
-            await Task.Delay(2000, stoppingToken);
         }
     }
 
-    private async Task ProcessOutboxBatchAsync(CancellationToken cancellationToken)
+    private async Task ProcessAvailableBatchesAsync(CancellationToken cancellationToken)
+    {
+        while (await ProcessOutboxBatchAsync(cancellationToken))
+        {
+        }
+    }
+
+    private async Task<bool> ProcessOutboxBatchAsync(CancellationToken cancellationToken)
     {
         using var scope = _serviceProvider.CreateScope();
-        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
         var messageBus = scope.ServiceProvider.GetRequiredService<IMessageBus>();
+        var lockOwner = $"{Environment.MachineName}:{Environment.ProcessId}:{Guid.NewGuid():N}";
+        var now = DateTime.UtcNow;
 
-        // Lấy danh sách các message chưa được xử lý hoặc đang chờ retry
-        var messages = await dbContext.OutboxMessages
-            .Where(m => m.ProcessedOnUtc == null && m.RetryCount < MaxRetries)
+        var candidates = await unitOfWork.GetRepository<OutboxRecord>().Query()
+            .Where(m => m.ProcessedOnUtc == null
+                        && m.RetryCount < MaxRetries
+                        && (m.NextAttemptAtUtc == null || m.NextAttemptAtUtc <= now)
+                        && (m.LockedUntilUtc == null || m.LockedUntilUtc <= now))
             .OrderBy(m => m.OccurredOnUtc)
             .Take(BatchSize)
             .ToListAsync(cancellationToken);
 
-        if (messages.Count == 0) return;
+        if (candidates.Count == 0)
+        {
+            return false;
+        }
+
+        var claimedIds = new List<Guid>(candidates.Count);
+        foreach (var candidate in candidates)
+        {
+            if (await TryClaimAsync(
+                    unitOfWork.GetDbConnection(),
+                    candidate.Id,
+                    lockOwner,
+                    now,
+                    cancellationToken))
+            {
+                claimedIds.Add(candidate.Id);
+            }
+        }
+
+        if (claimedIds.Count == 0)
+        {
+            return false;
+        }
+
+        var messages = await unitOfWork.GetRepository<OutboxRecord>().Query(tracking: true)
+            .Where(m => claimedIds.Contains(m.Id) && m.LockOwner == lockOwner)
+            .OrderBy(m => m.OccurredOnUtc)
+            .ToListAsync(cancellationToken);
 
         foreach (var message in messages)
         {
@@ -70,29 +141,30 @@ public class OutboxBackgroundProcessor : BackgroundService
                 var eventType = Type.GetType(message.MessageType);
                 if (eventType == null)
                 {
-                    _logger.LogError("❌ [Outbox Processor] Unknown event type: {MessageType} for message {Id}", message.MessageType, message.Id);
                     message.ProcessedOnUtc = DateTime.UtcNow;
                     message.Error = $"Unknown event type: {message.MessageType}";
+                    ClearLease(message);
                     continue;
                 }
 
                 var domainEvent = JsonSerializer.Deserialize(message.Payload, eventType, JsonOptions);
                 if (domainEvent == null)
                 {
-                    _logger.LogError("❌ [Outbox Processor] Deserialization failed for message {Id}", message.Id);
                     message.ProcessedOnUtc = DateTime.UtcNow;
                     message.Error = "Deserialization failed";
+                    ClearLease(message);
                     continue;
                 }
 
-                // Dispatch sự kiện vào Wolverine Message Bus
                 await messageBus.PublishAsync(domainEvent);
 
                 message.ProcessedOnUtc = DateTime.UtcNow;
                 message.Error = null;
+                message.NextAttemptAtUtc = null;
+                ClearLease(message);
 
                 _logger.LogInformation(
-                    "📤 [Outbox Processor] Dispatched event {EventType} (Id: {Id}) to Wolverine Bus | Tenant: {TenantId}",
+                    "Dispatched outbox event {EventType} ({MessageId}) for tenant {TenantId}.",
                     eventType.Name,
                     message.Id,
                     message.TenantId);
@@ -101,16 +173,66 @@ public class OutboxBackgroundProcessor : BackgroundService
             {
                 message.RetryCount++;
                 message.Error = ex.Message;
+                message.NextAttemptAtUtc = DateTime.UtcNow.AddSeconds(Math.Pow(2, message.RetryCount) * 5);
+                ClearLease(message);
 
                 _logger.LogWarning(
                     ex,
-                    "⚠️ [Outbox Processor] Failed to process message {Id}. Retry count: {RetryCount}/{MaxRetries}",
+                    "Outbox event {MessageId} failed. Retry {RetryCount}/{MaxRetries}.",
                     message.Id,
                     message.RetryCount,
                     MaxRetries);
             }
         }
 
-        await dbContext.SaveChangesAsync(cancellationToken);
+        await unitOfWork.SaveChangesAsync(cancellationToken);
+        return true;
+    }
+
+    private static void ClearLease(OutboxRecord message)
+    {
+        message.LockOwner = null;
+        message.LockedUntilUtc = null;
+    }
+
+    private static async Task<bool> TryClaimAsync(
+        DbConnection connection,
+        Guid messageId,
+        string lockOwner,
+        DateTime now,
+        CancellationToken cancellationToken)
+    {
+        if (connection.State != ConnectionState.Open)
+        {
+            await connection.OpenAsync(cancellationToken);
+        }
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE "OutboxMessages"
+            SET "LockOwner" = @lockOwner,
+                "LockedUntilUtc" = @lockedUntilUtc
+            WHERE "Id" = @id
+              AND "ProcessedOnUtc" IS NULL
+              AND "RetryCount" < @maxRetries
+              AND ("NextAttemptAtUtc" IS NULL OR "NextAttemptAtUtc" <= @now)
+              AND ("LockedUntilUtc" IS NULL OR "LockedUntilUtc" <= @now)
+            """;
+
+        AddParameter(command, "@lockOwner", lockOwner);
+        AddParameter(command, "@lockedUntilUtc", now.Add(LeaseDuration));
+        AddParameter(command, "@id", messageId);
+        AddParameter(command, "@maxRetries", MaxRetries);
+        AddParameter(command, "@now", now);
+
+        return await command.ExecuteNonQueryAsync(cancellationToken) == 1;
+    }
+
+    private static void AddParameter(DbCommand command, string name, object value)
+    {
+        var parameter = command.CreateParameter();
+        parameter.ParameterName = name;
+        parameter.Value = value;
+        command.Parameters.Add(parameter);
     }
 }

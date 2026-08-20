@@ -4,12 +4,12 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Wolverine;
 using WolverineApp.Application.Common.Models;
+using WolverineApp.Application.Common.Interfaces;
 using WolverineApp.Application.Common.Reporting;
 using WolverineApp.Application.DTOs.Orders;
 using WolverineApp.Application.Queries.Orders.GetOrderById;
 using WolverineApp.Domain.Identity;
 using WolverineApp.Domain.Reporting;
-using WolverineApp.Infrastructure.Data;
 
 namespace WolverineApp.Controllers;
 
@@ -38,21 +38,24 @@ public class ReportsController : ControllerBase
     private readonly IReportEngine _reportEngine;
     private readonly IReportTemplateStore _templateStore;
     private readonly ISemanticDatasetService _semanticService;
-    private readonly ApplicationDbContext _dbContext;
+    private readonly IUnitOfWork _unitOfWork;
     private readonly IMessageBus _bus;
+    private readonly ITenantProvider _tenantProvider;
 
     public ReportsController(
         IReportEngine reportEngine,
         IReportTemplateStore templateStore,
         ISemanticDatasetService semanticService,
-        ApplicationDbContext dbContext,
-        IMessageBus bus)
+        IUnitOfWork unitOfWork,
+        IMessageBus bus,
+        ITenantProvider tenantProvider)
     {
         _reportEngine = reportEngine;
         _templateStore = templateStore;
         _semanticService = semanticService;
-        _dbContext = dbContext;
+        _unitOfWork = unitOfWork;
         _bus = bus;
+        _tenantProvider = tenantProvider;
     }
 
     // ==========================================
@@ -87,8 +90,8 @@ public class ReportsController : ControllerBase
     [HasPermission("Reports", "Read")]
     public async Task<IActionResult> GetReportConfigurations()
     {
-        var tenantId = User.FindFirst("tenant_id")?.Value ?? "default-tenant";
-        var configs = await _dbContext.ReportConfigurations
+        var tenantId = _tenantProvider.TenantId;
+        var configs = await _unitOfWork.GetRepository<ReportConfiguration>().Query()
             .Where(c => c.TenantId == tenantId && c.IsActive && !c.IsDeleted)
             .Select(c => new
             {
@@ -108,8 +111,8 @@ public class ReportsController : ControllerBase
     [HasPermission("Reports", "Read")]
     public async Task<IActionResult> GetReportFilterFormSchema(string code)
     {
-        var tenantId = User.FindFirst("tenant_id")?.Value ?? "default-tenant";
-        var config = await _dbContext.ReportConfigurations
+        var tenantId = _tenantProvider.TenantId;
+        var config = await _unitOfWork.GetRepository<ReportConfiguration>().Query()
             .FirstOrDefaultAsync(c => c.TenantId == tenantId && c.Code == code && c.IsActive && !c.IsDeleted);
 
         if (config is null)
@@ -125,7 +128,7 @@ public class ReportsController : ControllerBase
     [HasPermission("Reports", "Export")]
     public async Task<IActionResult> SaveReportConfiguration([FromBody] SaveReportConfigurationRequest request)
     {
-        var tenantId = User.FindFirst("tenant_id")?.Value ?? "default-tenant";
+        var tenantId = _tenantProvider.TenantId;
 
         var dataset = await _semanticService.GetDatasetByCodeAsync(request.DatasetCode);
         if (dataset is null)
@@ -154,7 +157,8 @@ public class ReportsController : ControllerBase
             return BadRequest(ApiResponse<string>.Fail($"Lỗi cú pháp mẫu in: {validation.ErrorMessage}"));
         }
 
-        var existing = await _dbContext.ReportConfigurations
+        var configurationRepository = _unitOfWork.GetRepository<ReportConfiguration>();
+        var existing = await configurationRepository.Query(tracking: true)
             .FirstOrDefaultAsync(c => c.TenantId == tenantId && c.Code == request.Code);
 
         var selectedJson = JsonSerializer.Serialize(request.SelectedFields);
@@ -175,12 +179,12 @@ public class ReportsController : ControllerBase
                 filterConfigJson: filterJson,
                 templateContent: template
             );
-            await _dbContext.ReportConfigurations.AddAsync(newConfig);
+            await configurationRepository.AddAsync(newConfig);
         }
 
         // Đồng thời lưu vào IReportTemplateStore để RenderEngine có thể nạp template
         await _templateStore.SaveCustomTemplateAsync(request.Code, tenantId, template);
-        await _dbContext.SaveChangesAsync();
+        await _unitOfWork.SaveChangesAsync();
 
         return Ok(ApiResponse<string>.Ok($"Đã cấu hình thành công báo cáo '{request.Code}' cho đơn vị '{tenantId}'."));
     }
@@ -189,9 +193,9 @@ public class ReportsController : ControllerBase
     [HasPermission("Reports", "Export")]
     public async Task<IActionResult> ExecuteConfiguredReport(string code, [FromBody] ExecuteReportConfigRequest request)
     {
-        var tenantId = User.FindFirst("tenant_id")?.Value ?? "default-tenant";
+        var tenantId = _tenantProvider.TenantId;
 
-        var config = await _dbContext.ReportConfigurations
+        var config = await _unitOfWork.GetRepository<ReportConfiguration>().Query()
             .FirstOrDefaultAsync(c => c.TenantId == tenantId && c.Code == code && c.IsActive && !c.IsDeleted);
 
         if (config is null)
@@ -222,8 +226,7 @@ public class ReportsController : ControllerBase
         var renderRequest = new ReportRenderRequest(
             TemplateCode: config.Code,
             DataModel: dataModel,
-            Format: request.Format,
-            CustomTenantId: tenantId
+            Format: request.Format
         );
 
         var result = await _reportEngine.RenderAsync(renderRequest);
@@ -238,7 +241,7 @@ public class ReportsController : ControllerBase
     [HasPermission("Reports", "Read")]
     public async Task<IActionResult> GetAvailableTemplates()
     {
-        var tenantId = User.FindFirst("tenant_id")?.Value ?? "default-tenant";
+        var tenantId = _tenantProvider.TenantId;
         var templates = await _templateStore.ListAvailableTemplatesAsync(tenantId);
         return Ok(ApiResponse<List<string>>.Ok(templates));
     }
@@ -247,7 +250,7 @@ public class ReportsController : ControllerBase
     [HasPermission("Reports", "Read")]
     public async Task<IActionResult> GetTemplateContent(string code)
     {
-        var tenantId = User.FindFirst("tenant_id")?.Value ?? "default-tenant";
+        var tenantId = _tenantProvider.TenantId;
         var content = await _templateStore.GetTemplateContentAsync(code, tenantId);
         if (content is null)
         {
@@ -260,7 +263,7 @@ public class ReportsController : ControllerBase
     [HasPermission("Reports", "Export")]
     public async Task<IActionResult> SaveTemplate([FromBody] SaveTemplateDto dto)
     {
-        var tenantId = User.FindFirst("tenant_id")?.Value ?? "default-tenant";
+        var tenantId = _tenantProvider.TenantId;
 
         var validation = _reportEngine.ValidateTemplate(dto.Content);
         if (!validation.IsValid)
@@ -276,7 +279,7 @@ public class ReportsController : ControllerBase
     [HasPermission("Reports", "Export")]
     public async Task<IActionResult> DeleteCustomTemplate(string code)
     {
-        var tenantId = User.FindFirst("tenant_id")?.Value ?? "default-tenant";
+        var tenantId = _tenantProvider.TenantId;
         await _templateStore.DeleteCustomTemplateAsync(code, tenantId);
         return Ok(ApiResponse<string>.Ok($"Đã xóa mẫu in tùy biến '{code}' của đơn vị '{tenantId}'."));
     }

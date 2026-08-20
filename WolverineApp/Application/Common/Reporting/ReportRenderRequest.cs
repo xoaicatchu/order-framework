@@ -4,6 +4,5 @@ public record ReportRenderRequest(
     string TemplateCode,
     object DataModel,
     ReportOutputFormat Format = ReportOutputFormat.Pdf,
-    Dictionary<string, object>? Parameters = null,
-    string? CustomTenantId = null
+    Dictionary<string, object>? Parameters = null
 );

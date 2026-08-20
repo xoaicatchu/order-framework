@@ -1,7 +1,7 @@
-using System.Collections.Concurrent;
 using System.Text.Json;
 using Fluid;
 using Fluid.Values;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 using WolverineApp.Application.Common.Interfaces;
 using WolverineApp.Application.Common.Reporting;
@@ -12,7 +12,9 @@ namespace WolverineApp.Infrastructure.Reporting;
 public class LiquidReportEngine : IReportEngine
 {
     private static readonly FluidParser Parser = new();
-    private static readonly ConcurrentDictionary<string, (string RawContent, IFluidTemplate Template)> TemplateCache = new();
+    private const int MaxTemplateLength = 256_000;
+    private const int MaxOutputLength = 10_000_000;
+    private static readonly MemoryCache TemplateCache = new(new MemoryCacheOptions { SizeLimit = 256 });
     private readonly IReportTemplateStore _templateStore;
     private readonly ITenantProvider _tenantProvider;
     private readonly IEnumerable<IDocumentRenderer> _renderers;
@@ -37,6 +39,19 @@ public class LiquidReportEngine : IReportEngine
             return TemplateValidationResult.Error("Nội dung template không được để trống.");
         }
 
+        if (rawTemplateContent.Length > MaxTemplateLength)
+        {
+            return TemplateValidationResult.Error($"Template vượt quá giới hạn {MaxTemplateLength} ký tự.");
+        }
+
+        if (rawTemplateContent.Contains("<script", StringComparison.OrdinalIgnoreCase)
+            || rawTemplateContent.Contains("javascript:", StringComparison.OrdinalIgnoreCase)
+            || rawTemplateContent.Contains(" onerror=", StringComparison.OrdinalIgnoreCase)
+            || rawTemplateContent.Contains(" onclick=", StringComparison.OrdinalIgnoreCase))
+        {
+            return TemplateValidationResult.Error("Template chứa HTML/JavaScript không được phép.");
+        }
+
         if (!Parser.TryParse(rawTemplateContent, out _, out var error))
         {
             return TemplateValidationResult.Error($"Lỗi cú pháp Liquid: {error}");
@@ -57,8 +72,13 @@ public class LiquidReportEngine : IReportEngine
 
         var cacheKey = $"{targetTenant}:{templateCode}";
 
+        if (rawTemplate.Length > MaxTemplateLength)
+        {
+            throw new InvalidOperationException("Report template exceeds the configured size limit.");
+        }
+
         IFluidTemplate template;
-        if (TemplateCache.TryGetValue(cacheKey, out var cached) && cached.RawContent == rawTemplate)
+        if (TemplateCache.TryGetValue(cacheKey, out CachedTemplate? cached) && cached is not null && cached.RawContent == rawTemplate)
         {
             template = cached.Template;
         }
@@ -68,17 +88,41 @@ public class LiquidReportEngine : IReportEngine
             {
                 throw new InvalidOperationException($"Lỗi biên dịch Liquid template '{templateCode}': {error}");
             }
-            TemplateCache[cacheKey] = (rawTemplate, compiled);
+            TemplateCache.Set(
+                cacheKey,
+                new CachedTemplate(rawTemplate, compiled),
+                new MemoryCacheEntryOptions
+                {
+                    Size = 1,
+                    SlidingExpiration = TimeSpan.FromMinutes(30),
+                    AbsoluteExpirationRelativeToNow = TimeSpan.FromHours(2)
+                });
             template = compiled;
         }
 
         var context = CreateTemplateContext(dataModel);
-        return await template.RenderAsync(context);
+        var options = context.Options;
+        options.MaxSteps = 100_000;
+        options.MaxRecursion = 32;
+        var renderTask = template.RenderAsync(context).AsTask();
+        var completed = await Task.WhenAny(renderTask, Task.Delay(TimeSpan.FromSeconds(5), cancellationToken));
+        if (completed != renderTask)
+        {
+            throw new TimeoutException("Report template rendering exceeded the 5 second limit.");
+        }
+
+        var html = await renderTask;
+        if (html.Length > MaxOutputLength)
+        {
+            throw new InvalidOperationException("Rendered report exceeds the configured output size limit.");
+        }
+
+        return html;
     }
 
     public async Task<ReportRenderResult> RenderAsync(ReportRenderRequest request, CancellationToken cancellationToken = default)
     {
-        var tenantId = request.CustomTenantId ?? _tenantProvider.TenantId;
+        var tenantId = _tenantProvider.TenantId;
         _logger.LogInformation("Rendering report template '{TemplateCode}' in format '{Format}' for tenant '{TenantId}'",
             request.TemplateCode, request.Format, tenantId);
 
@@ -108,10 +152,7 @@ public class LiquidReportEngine : IReportEngine
 
     private static TemplateContext CreateTemplateContext(object dataModel)
     {
-        var options = new TemplateOptions
-        {
-            MemberAccessStrategy = UnsafeMemberAccessStrategy.Instance
-        };
+        var options = new TemplateOptions();
 
         // 1. Filter định dạng tiền tệ: {{ amount | format_currency: 'USD' }}
         options.Filters.AddFilter("format_currency", (input, arguments, ctx) =>
@@ -214,11 +255,11 @@ public class LiquidReportEngine : IReportEngine
 
     private static object NormalizeDataModel(object dataModel)
     {
-        if (dataModel is JsonElement jsonElement)
-        {
-            return ConvertJsonElement(jsonElement) ?? dataModel;
-        }
-        return dataModel;
+        var jsonElement = dataModel is JsonElement element
+            ? element
+            : JsonSerializer.SerializeToElement(dataModel);
+
+        return ConvertJsonElement(jsonElement) ?? new Dictionary<string, object?>();
     }
 
     private static object? ConvertJsonElement(JsonElement element)
@@ -235,4 +276,6 @@ public class LiquidReportEngine : IReportEngine
             _ => element.ToString()
         };
     }
+
+    private sealed record CachedTemplate(string RawContent, IFluidTemplate Template);
 }

@@ -12,7 +12,7 @@ public class Order : BaseAuditableEntity
     public OrderStatus Status { get; set; } = OrderStatus.Pending;
     public List<OrderItem> Items { get; set; } = [];
 
-    public static Order Create(string customerName, string customerEmail, IEnumerable<OrderItem> items)
+    public static Order Create(string customerName, string customerEmail, string tenantId, IEnumerable<OrderItem> items)
     {
         var order = new Order
         {
@@ -20,6 +20,7 @@ public class Order : BaseAuditableEntity
             OrderNumber = $"ORD-{DateTime.UtcNow:yyyyMMddHHmmss}-{Guid.NewGuid().ToString()[..8].ToUpper()}",
             CustomerName = customerName,
             CustomerEmail = customerEmail,
+            TenantId = tenantId,
             Status = OrderStatus.Pending
         };
 
@@ -45,9 +46,32 @@ public class Order : BaseAuditableEntity
         return order;
     }
 
-    public void UpdateStatus(OrderStatus newStatus)
+    public void Confirm()
     {
-        if (Status == newStatus) return;
+        TransitionTo(OrderStatus.Confirmed, OrderStatus.Pending);
+    }
+
+    public void StartProcessing()
+    {
+        TransitionTo(OrderStatus.Processing, OrderStatus.Confirmed);
+    }
+
+    public void Ship()
+    {
+        TransitionTo(OrderStatus.Shipped, OrderStatus.Processing);
+    }
+
+    public void Deliver()
+    {
+        TransitionTo(OrderStatus.Delivered, OrderStatus.Shipped);
+    }
+
+    private void TransitionTo(OrderStatus newStatus, OrderStatus requiredCurrentStatus)
+    {
+        if (Status != requiredCurrentStatus)
+        {
+            throw new InvalidOperationException($"Order cannot move from '{Status}' to '{newStatus}'.");
+        }
 
         var oldStatus = Status;
         Status = newStatus;

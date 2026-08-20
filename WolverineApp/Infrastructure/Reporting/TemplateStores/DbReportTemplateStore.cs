@@ -1,25 +1,23 @@
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using WolverineApp.Application.Common.Interfaces;
 using WolverineApp.Application.Common.Reporting;
 using WolverineApp.Domain.Reporting;
-using WolverineApp.Infrastructure.Data;
 
 namespace WolverineApp.Infrastructure.Reporting.TemplateStores;
 
 public class DbReportTemplateStore : IReportTemplateStore
 {
-    private readonly IServiceScopeFactory _scopeFactory;
+    private readonly IUnitOfWork _unitOfWork;
     private readonly ICacheService _cacheService;
     private readonly ILogger<DbReportTemplateStore> _logger;
 
     public DbReportTemplateStore(
-        IServiceScopeFactory scopeFactory,
+        IUnitOfWork unitOfWork,
         ICacheService cacheService,
         ILogger<DbReportTemplateStore> logger)
     {
-        _scopeFactory = scopeFactory;
+        _unitOfWork = unitOfWork;
         _cacheService = cacheService;
         _logger = logger;
     }
@@ -34,12 +32,10 @@ public class DbReportTemplateStore : IReportTemplateStore
             return cachedContent;
         }
 
-        using var scope = _scopeFactory.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var repository = _unitOfWork.GetRepository<ReportTemplate>();
 
         // 1. Tìm mẫu tùy biến riêng của Tenant này trước
-        var tenantTemplate = await db.ReportTemplates
-            .IgnoreQueryFilters()
+        var tenantTemplate = await repository.Query(ignoreFilters: true)
             .FirstOrDefaultAsync(t => t.TenantId == tenantId && t.Code == templateCode && t.IsActive && !t.IsDeleted, cancellationToken);
 
         if (tenantTemplate != null && !string.IsNullOrWhiteSpace(tenantTemplate.Content))
@@ -49,8 +45,7 @@ public class DbReportTemplateStore : IReportTemplateStore
         }
 
         // 2. Nếu Tenant chưa tùy biến, fallback về Mẫu Chuẩn Hệ Thống (IsSystemDefault = true)
-        var systemDefaultTemplate = await db.ReportTemplates
-            .IgnoreQueryFilters()
+        var systemDefaultTemplate = await repository.Query(ignoreFilters: true)
             .FirstOrDefaultAsync(t => t.IsSystemDefault && t.Code == templateCode && t.IsActive && !t.IsDeleted, cancellationToken);
 
         if (systemDefaultTemplate != null && !string.IsNullOrWhiteSpace(systemDefaultTemplate.Content))
@@ -65,11 +60,9 @@ public class DbReportTemplateStore : IReportTemplateStore
 
     public async Task SaveCustomTemplateAsync(string templateCode, string tenantId, string content, CancellationToken cancellationToken = default)
     {
-        using var scope = _scopeFactory.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var repository = _unitOfWork.GetRepository<ReportTemplate>();
 
-        var existing = await db.ReportTemplates
-            .IgnoreQueryFilters()
+        var existing = await repository.Query(tracking: true, ignoreFilters: true)
             .FirstOrDefaultAsync(t => t.TenantId == tenantId && t.Code == templateCode, cancellationToken);
 
         if (existing != null)
@@ -89,10 +82,10 @@ public class DbReportTemplateStore : IReportTemplateStore
                 tenantId: tenantId,
                 isSystemDefault: false
             );
-            await db.ReportTemplates.AddAsync(newTemplate, cancellationToken);
+            await repository.AddAsync(newTemplate, cancellationToken);
         }
 
-        await db.SaveChangesAsync(cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         // Xóa Cache để lượt gọi kế tiếp nhận mẫu mới ngay lập tức
         var cacheKey = $"report_template:{tenantId}:{templateCode}";
@@ -102,11 +95,9 @@ public class DbReportTemplateStore : IReportTemplateStore
 
     public async Task<List<string>> ListAvailableTemplatesAsync(string tenantId, CancellationToken cancellationToken = default)
     {
-        using var scope = _scopeFactory.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var repository = _unitOfWork.GetRepository<ReportTemplate>();
 
-        var templateCodes = await db.ReportTemplates
-            .IgnoreQueryFilters()
+        var templateCodes = await repository.Query(ignoreFilters: true)
             .Where(t => (t.TenantId == tenantId || t.IsSystemDefault) && t.IsActive && !t.IsDeleted)
             .Select(t => t.Code)
             .Distinct()
@@ -117,18 +108,16 @@ public class DbReportTemplateStore : IReportTemplateStore
 
     public async Task DeleteCustomTemplateAsync(string templateCode, string tenantId, CancellationToken cancellationToken = default)
     {
-        using var scope = _scopeFactory.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var repository = _unitOfWork.GetRepository<ReportTemplate>();
 
-        var existing = await db.ReportTemplates
-            .IgnoreQueryFilters()
+        var existing = await repository.Query(tracking: true, ignoreFilters: true)
             .FirstOrDefaultAsync(t => t.TenantId == tenantId && t.Code == templateCode && !t.IsSystemDefault, cancellationToken);
 
         if (existing != null)
         {
             existing.IsDeleted = true;
             existing.DeletedAt = DateTime.UtcNow;
-            await db.SaveChangesAsync(cancellationToken);
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
 
             var cacheKey = $"report_template:{tenantId}:{templateCode}";
             await _cacheService.RemoveAsync(cacheKey, cancellationToken);

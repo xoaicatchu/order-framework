@@ -2,7 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using WolverineApp.Application.Common.Interfaces;
 using WolverineApp.Application.DTOs.Roles;
 using WolverineApp.Domain.Identity;
-using WolverineApp.Infrastructure.Data;
+using WolverineApp.Infrastructure.Identity;
 
 namespace WolverineApp.Application.Commands.Roles.UpdateRole;
 
@@ -15,16 +15,16 @@ public record UpdateRoleCommand(
 
 public class UpdateRoleCommandHandler
 {
-    private readonly ApplicationDbContext _dbContext;
+    private readonly IUnitOfWork _unitOfWork;
     private readonly ITenantProvider _tenantProvider;
     private readonly IPermissionService _permissionService;
 
     public UpdateRoleCommandHandler(
-        ApplicationDbContext dbContext,
+        IUnitOfWork unitOfWork,
         ITenantProvider tenantProvider,
         IPermissionService permissionService)
     {
-        _dbContext = dbContext;
+        _unitOfWork = unitOfWork;
         _tenantProvider = tenantProvider;
         _permissionService = permissionService;
     }
@@ -32,10 +32,37 @@ public class UpdateRoleCommandHandler
     public async Task<RoleDto> Handle(UpdateRoleCommand command, CancellationToken cancellationToken)
     {
         var tenantId = _tenantProvider.TenantId;
+        var name = command.Name?.Trim();
+        if (string.IsNullOrWhiteSpace(name) || name.Length > 100)
+        {
+            throw new InvalidOperationException("Role name is required and must be at most 100 characters.");
+        }
 
-        var role = await _dbContext.Roles
+        var permissionCodes = command.Permissions
+            .Select(p => p.Trim())
+            .Where(p => !string.IsNullOrWhiteSpace(p))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (permissionCodes.Contains(PermissionService.RootPermissionCode, StringComparer.OrdinalIgnoreCase))
+        {
+            throw new UnauthorizedAccessException("Tenant roles cannot contain System:Root.");
+        }
+
+        var knownPermissions = await _unitOfWork.GetRepository<AppPermission>().Query()
+            .Where(p => permissionCodes.Contains(p.Code))
+            .Select(p => p.Code)
+            .ToListAsync(cancellationToken);
+
+        if (knownPermissions.Count != permissionCodes.Count)
+        {
+            throw new InvalidOperationException("One or more permissions are not registered.");
+        }
+
+        var role = await _unitOfWork.GetRepository<AppRole>().Query(tracking: true)
             .Include(r => r.Permissions)
-            .FirstOrDefaultAsync(r => r.Id == command.Id, cancellationToken);
+            .AsTracking()
+            .FirstOrDefaultAsync(r => r.Id == command.Id && r.TenantId == tenantId, cancellationToken);
 
         if (role is null)
         {
@@ -47,12 +74,12 @@ public class UpdateRoleCommandHandler
             throw new InvalidOperationException("System default roles cannot be modified.");
         }
 
-        role.Update(command.Name, command.Description);
+        role.Update(name, command.Description);
 
-        _dbContext.RolePermissions.RemoveRange(role.Permissions);
+        _unitOfWork.GetRepository<AppRolePermission>().DeleteRange(role.Permissions);
         role.Permissions.Clear();
 
-        foreach (var code in command.Permissions.Distinct(StringComparer.OrdinalIgnoreCase))
+        foreach (var code in permissionCodes)
         {
             var newPerm = new AppRolePermission
             {
@@ -62,10 +89,10 @@ public class UpdateRoleCommandHandler
                 TenantId = tenantId
             };
             role.Permissions.Add(newPerm);
-            await _dbContext.RolePermissions.AddAsync(newPerm, cancellationToken);
+            await _unitOfWork.GetRepository<AppRolePermission>().AddAsync(newPerm, cancellationToken);
         }
 
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
         await _permissionService.InvalidateTenantPermissionsCacheAsync(tenantId, cancellationToken);
 
         return new RoleDto(

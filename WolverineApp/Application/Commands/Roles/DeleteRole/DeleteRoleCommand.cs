@@ -1,6 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using WolverineApp.Application.Common.Interfaces;
-using WolverineApp.Infrastructure.Data;
+using WolverineApp.Domain.Identity;
 
 namespace WolverineApp.Application.Commands.Roles.DeleteRole;
 
@@ -8,16 +8,16 @@ public record DeleteRoleCommand(Guid Id) : ICommand<bool>;
 
 public class DeleteRoleCommandHandler
 {
-    private readonly ApplicationDbContext _dbContext;
+    private readonly IUnitOfWork _unitOfWork;
     private readonly ITenantProvider _tenantProvider;
     private readonly IPermissionService _permissionService;
 
     public DeleteRoleCommandHandler(
-        ApplicationDbContext dbContext,
+        IUnitOfWork unitOfWork,
         ITenantProvider tenantProvider,
         IPermissionService permissionService)
     {
-        _dbContext = dbContext;
+        _unitOfWork = unitOfWork;
         _tenantProvider = tenantProvider;
         _permissionService = permissionService;
     }
@@ -26,8 +26,12 @@ public class DeleteRoleCommandHandler
     {
         var tenantId = _tenantProvider.TenantId;
 
-        var role = await _dbContext.Roles
-            .FirstOrDefaultAsync(r => r.Id == command.Id, cancellationToken);
+        var roleRepository = _unitOfWork.GetRepository<AppRole>();
+        var rolePermissionRepository = _unitOfWork.GetRepository<AppRolePermission>();
+        var userRoleRepository = _unitOfWork.GetRepository<AppUserRole>();
+
+        var role = await roleRepository.Query(tracking: true, ignoreFilters: true)
+            .FirstOrDefaultAsync(r => r.Id == command.Id && r.TenantId == tenantId && !r.IsDeleted, cancellationToken);
 
         if (role is null)
         {
@@ -39,8 +43,29 @@ public class DeleteRoleCommandHandler
             throw new InvalidOperationException("System default roles cannot be deleted.");
         }
 
-        _dbContext.Roles.Remove(role);
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        var affectedUserIds = await userRoleRepository.Query()
+            .Where(ur => ur.RoleId == role.Id && ur.TenantId == tenantId)
+            .Select(ur => ur.UserId)
+            .Distinct()
+            .ToListAsync(cancellationToken);
+
+        await _unitOfWork.BeginTransactionAsync(cancellationToken);
+        var rolePermissions = await rolePermissionRepository.Query(tracking: true)
+            .Where(rp => rp.RoleId == role.Id && rp.TenantId == tenantId)
+            .ToListAsync(cancellationToken);
+        var userRoles = await userRoleRepository.Query(tracking: true)
+            .Where(ur => ur.RoleId == role.Id && ur.TenantId == tenantId)
+            .ToListAsync(cancellationToken);
+
+        rolePermissionRepository.DeleteRange(rolePermissions);
+        userRoleRepository.DeleteRange(userRoles);
+        roleRepository.Delete(role);
+        await _unitOfWork.CommitTransactionAsync(cancellationToken);
+
+        foreach (var userId in affectedUserIds)
+        {
+            await _permissionService.InvalidateUserPermissionsCacheAsync(userId, tenantId, cancellationToken);
+        }
         await _permissionService.InvalidateTenantPermissionsCacheAsync(tenantId, cancellationToken);
 
         return true;

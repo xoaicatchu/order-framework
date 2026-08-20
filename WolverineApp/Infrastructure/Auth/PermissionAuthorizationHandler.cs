@@ -23,24 +23,19 @@ public class PermissionAuthorizationHandler : AuthorizationHandler<PermissionReq
             return;
         }
 
-        // 1. Root User (System Super Admin) bypass mọi kiểm tra quyền
-        var isRootClaim = context.User.FindFirst("is_root")?.Value;
-        if (string.Equals(isRootClaim, "true", StringComparison.OrdinalIgnoreCase))
+        // Only signed identity-provider claims are accepted. There is no request-controlled root bypass.
+        var userId = context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value
+            ?? context.User.FindFirst("sub")?.Value
+            ?? context.User.Identity?.Name;
+
+        var tenantId = context.User.FindFirst("tenant_id")?.Value
+            ?? context.User.FindFirst("tenant")?.Value;
+
+        if (string.IsNullOrWhiteSpace(userId) || string.IsNullOrWhiteSpace(tenantId))
         {
-            context.Succeed(requirement);
             return;
         }
 
-        // 2. Trích xuất danh tính từ Slim JWT Token
-        var userId = context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value
-            ?? context.User.FindFirst("sub")?.Value
-            ?? context.User.Identity?.Name
-            ?? "system";
-
-        var tenantId = context.User.FindFirst("tenant_id")?.Value
-            ?? "default-tenant";
-
-        // 3. Tra cứu quyền động qua L1/L2 HybridCache (Tốc độ: ~50 nanoseconds, hỗ trợ thu hồi quyền tức thì)
         using var scope = _serviceProvider.CreateScope();
         var permissionService = scope.ServiceProvider.GetRequiredService<IPermissionService>();
 

@@ -19,6 +19,10 @@ public class CreateOrderCommandValidator : AbstractValidator<CreateOrderCommand>
         RuleFor(x => x.Items)
             .NotEmpty().WithMessage("Order must contain at least one item.");
 
+        RuleFor(x => x.Items)
+            .Must(items => items.Count <= 100)
+            .WithMessage("An order cannot contain more than 100 items.");
+
         RuleForEach(x => x.Items)
             .SetValidator(new CreateOrderItemValidator());
     }
@@ -34,9 +38,11 @@ public class CreateOrderItemValidator : AbstractValidator<CreateOrderItemDto>
             .MaximumLength(500).WithMessage("Product name cannot exceed 500 characters.");
 
         RuleFor(x => x.Quantity)
-            .GreaterThan(0).WithMessage("Quantity must be greater than 0.");
+            .GreaterThan(0).WithMessage("Quantity must be greater than 0.")
+            .LessThanOrEqualTo(1_000_000).WithMessage("Quantity is too large.");
 
         RuleFor(x => x.UnitPrice)
-            .GreaterThan(0).WithMessage("Unit price must be greater than 0.");
+            .GreaterThan(0).WithMessage("Unit price must be greater than 0.")
+            .LessThanOrEqualTo(100_000_000).WithMessage("Unit price is too large.");
     }
 }

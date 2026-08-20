@@ -1,7 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using WolverineApp.Application.Common.Interfaces;
 using WolverineApp.Domain.Identity;
-using WolverineApp.Infrastructure.Data;
+using WolverineApp.Infrastructure.Persistence.Models;
 
 namespace WolverineApp.Application.Commands.Roles.AssignUserRoles;
 
@@ -12,16 +12,16 @@ public record AssignUserRolesCommand(
 
 public class AssignUserRolesCommandHandler
 {
-    private readonly ApplicationDbContext _dbContext;
+    private readonly IUnitOfWork _unitOfWork;
     private readonly ITenantProvider _tenantProvider;
     private readonly IPermissionService _permissionService;
 
     public AssignUserRolesCommandHandler(
-        ApplicationDbContext dbContext,
+        IUnitOfWork unitOfWork,
         ITenantProvider tenantProvider,
         IPermissionService permissionService)
     {
-        _dbContext = dbContext;
+        _unitOfWork = unitOfWork;
         _tenantProvider = tenantProvider;
         _permissionService = permissionService;
     }
@@ -31,33 +31,50 @@ public class AssignUserRolesCommandHandler
         var tenantId = _tenantProvider.TenantId;
         var normalizedUserId = command.UserId.Trim();
 
-        var validRoles = await _dbContext.Roles
-            .Where(r => command.RoleIds.Contains(r.Id))
+        var roleRepository = _unitOfWork.GetRepository<AppRole>();
+        var userRoleRepository = _unitOfWork.GetRepository<AppUserRole>();
+        var membershipRepository = _unitOfWork.GetRepository<TenantMembershipRecord>();
+
+        var isTenantMember = await membershipRepository.Query()
+            .AnyAsync(m => m.UserId == normalizedUserId
+                           && m.TenantId == tenantId
+                           && m.IsActive, cancellationToken);
+
+        if (!isTenantMember)
+        {
+            throw new InvalidOperationException("The user is not an active member of the current tenant.");
+        }
+
+        var validRoles = await roleRepository.Query()
+            .Where(r => command.RoleIds.Contains(r.Id)
+                        && r.TenantId == tenantId
+                        && !r.IsDeleted
+                        && !r.IsSystemRole)
             .ToListAsync(cancellationToken);
 
-        if (validRoles.Count != command.RoleIds.Count)
+        if (validRoles.Count != command.RoleIds.Distinct().Count())
         {
             throw new InvalidOperationException("One or more selected roles are invalid for the current tenant.");
         }
 
-        var oldUserRoles = await _dbContext.UserRoles
+        var oldUserRoles = await userRoleRepository.Query(tracking: true)
             .Where(ur => ur.UserId == normalizedUserId && ur.TenantId == tenantId)
             .ToListAsync(cancellationToken);
 
-        _dbContext.UserRoles.RemoveRange(oldUserRoles);
+        userRoleRepository.DeleteRange(oldUserRoles);
 
         foreach (var roleId in command.RoleIds)
         {
-            _dbContext.UserRoles.Add(new AppUserRole
+            await userRoleRepository.AddAsync(new AppUserRole
             {
                 Id = Guid.NewGuid(),
                 UserId = normalizedUserId,
                 RoleId = roleId,
                 TenantId = tenantId
-            });
+            }, cancellationToken);
         }
 
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
         await _permissionService.InvalidateUserPermissionsCacheAsync(normalizedUserId, tenantId, cancellationToken);
 
         return true;
