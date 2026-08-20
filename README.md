@@ -75,6 +75,8 @@ WolverineApp/
 │   └── BackgroundServices/  # outbox dispatcher
 ├── Internal/Generated/      # Wolverine generated handler registry
 └── Migrations/              # EF Core migrations
+
+WolverineFrontend/           # Angular Report Studio: quản lý và xuất report
 ```
 
 ## Tài liệu theo góc nhìn
@@ -86,6 +88,7 @@ WolverineApp/
 - [Reporting và template](docs/reporting/reporting-guide.md)
 - [Deployment và vận hành](docs/operations/deployment-and-operations.md)
 - [Production readiness](docs/operations/production-readiness.md)
+- [Frontend Report Studio](WolverineFrontend/README.md)
 
 ## Kiểm chứng gần nhất
 
