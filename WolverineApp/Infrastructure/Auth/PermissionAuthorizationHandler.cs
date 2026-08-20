@@ -24,7 +24,6 @@ public class PermissionAuthorizationHandler : AuthorizationHandler<PermissionReq
             return;
         }
 
-        // 1. Kiểm tra nếu là Root User (System Admin tối cao) qua Claim
         var isRootClaim = context.User.FindFirst("is_root")?.Value;
         if (string.Equals(isRootClaim, "true", StringComparison.OrdinalIgnoreCase))
         {
@@ -32,7 +31,6 @@ public class PermissionAuthorizationHandler : AuthorizationHandler<PermissionReq
             return;
         }
 
-        // 2. Kiểm tra nếu Token đã mang sẵn quyền này hoặc quyền System:Root
         var tokenPermissions = context.User.FindAll("permission").Select(c => c.Value);
         if (tokenPermissions.Contains(RootPermissionCode, StringComparer.OrdinalIgnoreCase) ||
             tokenPermissions.Contains(requirement.Permission, StringComparer.OrdinalIgnoreCase))
@@ -41,7 +39,6 @@ public class PermissionAuthorizationHandler : AuthorizationHandler<PermissionReq
             return;
         }
 
-        // 3. Trích xuất trực tiếp UserId và TenantId từ ClaimsPrincipal
         var userId = context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value
             ?? context.User.FindFirst("sub")?.Value
             ?? context.User.Identity?.Name
@@ -50,7 +47,6 @@ public class PermissionAuthorizationHandler : AuthorizationHandler<PermissionReq
         var tenantId = context.User.FindFirst("tenant_id")?.Value
             ?? "default-tenant";
 
-        // 4. Truy vấn Dynamic RBAC từ Database / Cache theo Tenant
         using var scope = _serviceProvider.CreateScope();
         var permissionService = scope.ServiceProvider.GetRequiredService<IPermissionService>();
 

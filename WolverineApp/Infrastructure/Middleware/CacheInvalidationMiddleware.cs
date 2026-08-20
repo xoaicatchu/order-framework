@@ -17,7 +17,7 @@ public static class CacheInvalidationMiddleware
         if (envelope.Message is IBaseCommand command)
         {
             var tenantId = tenantProvider.TenantId;
-            logger.LogDebug("🧹 [AOP Cache] Automatically invalidating cache for Tenant: {TenantId} after executing {CommandType}",
+            logger.LogDebug("Invalidating cache for Tenant: {TenantId} after executing {CommandType}",
                 tenantId, command.GetType().Name);
 
             await cacheService.RemoveByTagAsync(CacheKeys.OrderTag(tenantId), cancellationToken);

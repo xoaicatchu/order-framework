@@ -23,16 +23,12 @@ public class AuthController : ControllerBase
         _permissionService = permissionService;
     }
 
-    /// <summary>
-    /// [Auth] Đăng nhập và tạo JWT Bearer Token (Hỗ trợ Root User / Admin đơn vị / Nhân viên với quyền động từ Database)
-    /// </summary>
     [AllowAnonymous]
     [HttpPost("token")]
     public async Task<IActionResult> GenerateToken([FromBody] LoginRequest request)
     {
         var tenantId = request.TenantId ?? "default-tenant";
 
-        // 1. Nếu là Root User (System Admin tối cao toàn hệ thống)
         if (request.IsRoot)
         {
             var rootResponse = _authTokenService.GenerateToken(
@@ -41,28 +37,17 @@ public class AuthController : ControllerBase
                 isRoot: true,
                 new[] { PermissionDiscoveryService.RootPermissionCode }
             );
-            return Ok(ApiResponse<TokenResponse>.Ok(rootResponse, "Đăng nhập Root User hệ thống thành công."));
+            return Ok(ApiResponse<TokenResponse>.Ok(rootResponse, "Root authentication successful."));
         }
 
-        // 2. Nếu có danh sách quyền truyền trực tiếp (dùng cho test nhanh hoặc custom)
-        List<string> permissions;
-        if (request.Permissions != null && request.Permissions.Count > 0)
-        {
-            permissions = request.Permissions;
-        }
-        else
-        {
-            // Truy vấn quyền động từ Database của đơn vị (Dynamic RBAC)
-            permissions = await _permissionService.GetUserPermissionsAsync(request.Username, tenantId);
-        }
+        var permissions = (request.Permissions != null && request.Permissions.Count > 0)
+            ? request.Permissions
+            : await _permissionService.GetUserPermissionsAsync(request.Username, tenantId);
 
         var response = _authTokenService.GenerateToken(request.Username, tenantId, isRoot: false, permissions);
-        return Ok(ApiResponse<TokenResponse>.Ok(response, "Đăng nhập thành công."));
+        return Ok(ApiResponse<TokenResponse>.Ok(response, "Authentication successful."));
     }
 
-    /// <summary>
-    /// [Auth] Lấy thông tin tài khoản hiện tại từ JWT Token
-    /// </summary>
     [Authorize]
     [HttpGet("me")]
     public IActionResult GetCurrentUser()

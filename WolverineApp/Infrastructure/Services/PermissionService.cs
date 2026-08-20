@@ -31,10 +31,9 @@ public class PermissionService : IPermissionService
             cacheKey,
             async ct =>
             {
-                _logger.LogDebug("🔍 [Dynamic RBAC] Resolving dynamic permissions for User: {UserId} in Tenant: {TenantId}", userId, tenantId);
+                _logger.LogDebug("Resolving dynamic permissions for User: {UserId} in Tenant: {TenantId}", userId, tenantId);
 
-                // JOIN UserRoles và RolePermissions lấy toàn bộ mã quyền của User trong Tenant
-                var permissions = await _dbContext.UserRoles
+                return await _dbContext.UserRoles
                     .AsNoTracking()
                     .Where(ur => ur.UserId == userId && ur.TenantId == tenantId)
                     .Join(
@@ -44,8 +43,6 @@ public class PermissionService : IPermissionService
                         (ur, rp) => rp.PermissionCode)
                     .Distinct()
                     .ToListAsync(ct);
-
-                return permissions;
             },
             expiration: TimeSpan.FromMinutes(15),
             tags: [tenantTag],
@@ -56,7 +53,6 @@ public class PermissionService : IPermissionService
     {
         var userPermissions = await GetUserPermissionsAsync(userId, tenantId, cancellationToken);
 
-        // Nếu có quyền Root (Quản trị tối cao toàn hệ thống) thì cho phép toàn bộ
         if (userPermissions.Contains(RootPermissionCode, StringComparer.OrdinalIgnoreCase))
         {
             return true;

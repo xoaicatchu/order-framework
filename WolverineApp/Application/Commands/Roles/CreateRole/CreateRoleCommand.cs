@@ -37,7 +37,7 @@ public class CreateRoleCommandHandler
 
         if (existing)
         {
-            throw new InvalidOperationException($"Tên vai trò '{command.Name}' đã tồn tại trong đơn vị '{tenantId}'.");
+            throw new InvalidOperationException($"Role '{command.Name}' already exists in tenant '{tenantId}'.");
         }
 
         var role = AppRole.Create(command.Name, command.Description, tenantId);
@@ -46,7 +46,6 @@ public class CreateRoleCommandHandler
         await _dbContext.Roles.AddAsync(role, cancellationToken);
         await _dbContext.SaveChangesAsync(cancellationToken);
 
-        // Hủy cache quyền của đơn vị để các user nhận quyền mới ngay lập tức
         await _permissionService.InvalidateTenantPermissionsCacheAsync(tenantId, cancellationToken);
 
         return new RoleDto(

@@ -26,20 +26,14 @@ public class OrdersController : ControllerBase
         _bus = bus;
     }
 
-    /// <summary>
-    /// [Command] Tạo đơn hàng mới (Quyền: Orders:Create)
-    /// </summary>
     [HttpPost("create")]
     [HasPermission("Orders", "Create")]
     public async Task<IActionResult> CreateOrder([FromBody] CreateOrderCommand command)
     {
         var response = await _bus.InvokeAsync<OrderDto>(command);
-        return StatusCode(StatusCodes.Status201Created, ApiResponse<OrderDto>.Created(response, "Tạo đơn hàng thành công."));
+        return StatusCode(StatusCodes.Status201Created, ApiResponse<OrderDto>.Created(response, "Order created successfully."));
     }
 
-    /// <summary>
-    /// [Query] Lấy chi tiết đơn hàng theo ID (Quyền: Orders:Read)
-    /// </summary>
     [HttpGet("{id:guid}")]
     [HasPermission("Orders", "Read")]
     public async Task<IActionResult> GetOrder(Guid id)
@@ -48,9 +42,6 @@ public class OrdersController : ControllerBase
         return Ok(ApiResponse<OrderDto>.Ok(response));
     }
 
-    /// <summary>
-    /// [Query] Lấy danh sách đơn hàng có phân trang (Quyền: Orders:Read)
-    /// </summary>
     [HttpGet("list")]
     [HasPermission("Orders", "Read")]
     public async Task<IActionResult> GetAllOrders(
@@ -63,31 +54,22 @@ public class OrdersController : ControllerBase
         return Ok(ApiResponse<PagedResult<OrderDto>>.Ok(response));
     }
 
-    /// <summary>
-    /// [Command] Cập nhật trạng thái đơn hàng (Quyền: Orders:Update)
-    /// </summary>
     [HttpPut("{id:guid}/status")]
     [HasPermission("Orders", "Update")]
     public async Task<IActionResult> UpdateOrderStatus(Guid id, [FromBody] UpdateOrderStatusRequest request)
     {
         var response = await _bus.InvokeAsync<OrderDto>(new UpdateOrderStatusCommand(id, request.Status));
-        return Ok(ApiResponse<OrderDto>.Ok(response, "Cập nhật trạng thái đơn hàng thành công."));
+        return Ok(ApiResponse<OrderDto>.Ok(response, "Order status updated successfully."));
     }
 
-    /// <summary>
-    /// [Command] Hủy đơn hàng (Quyền: Orders:Cancel)
-    /// </summary>
     [HttpDelete("{id:guid}/cancel")]
     [HasPermission("Orders", "Cancel")]
     public async Task<IActionResult> CancelOrder(Guid id, [FromQuery] bool isConfirmed = false)
     {
         var response = await _bus.InvokeAsync<OrderDto>(new CancelOrderCommand(id, isConfirmed));
-        return Ok(ApiResponse<OrderDto>.Ok(response, "Đơn hàng đã được hủy thành công."));
+        return Ok(ApiResponse<OrderDto>.Ok(response, "Order cancelled successfully."));
     }
 
-    /// <summary>
-    /// [Query] Lấy thống kê tổng hợp đơn hàng (Quyền: Orders:Read)
-    /// </summary>
     [HttpGet("statistics/summary")]
     [HasPermission("Orders", "Read")]
     public async Task<IActionResult> GetOrderStatistics()

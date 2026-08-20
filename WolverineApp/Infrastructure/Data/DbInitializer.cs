@@ -9,10 +9,8 @@ public static class DbInitializer
 {
     public static async Task SeedInitialDataAsync(ApplicationDbContext context, ILogger logger)
     {
-        // 1. Tự động quét Controller/Action và đồng bộ toàn bộ Permissions vào Database
         await PermissionDiscoveryService.DiscoverAndSyncPermissionsAsync(context, typeof(DbInitializer).Assembly, logger);
 
-        // 2. Seed vai trò System Role (Root Admin)
         var systemRootRole = await context.Roles
             .IgnoreQueryFilters()
             .FirstOrDefaultAsync(r => r.IsSystemRole && r.Name == "SystemRootAdmin");
@@ -22,10 +20,8 @@ public static class DbInitializer
             systemRootRole = AppRole.Create("SystemRootAdmin", "System Root Super Admin Role", "system", isSystemRole: true);
             systemRootRole.SetPermissions([PermissionDiscoveryService.RootPermissionCode]);
             await context.Roles.AddAsync(systemRootRole);
-            logger.LogInformation("🌱 [Seed] Seeded System Root Role.");
         }
 
-        // 3. Seed vai trò mẫu cho Default Tenant (Admin Đơn Vị & Nhân Viên Vận Hành)
         const string defaultTenant = "default-tenant";
 
         var adminDonViRole = await context.Roles
@@ -49,7 +45,6 @@ public static class DbInitializer
             ]);
             await context.Roles.AddAsync(adminDonViRole);
 
-            // Gán role Admin cho alice_manager
             context.UserRoles.Add(new AppUserRole
             {
                 Id = Guid.NewGuid(),
@@ -57,7 +52,6 @@ public static class DbInitializer
                 RoleId = adminDonViRole.Id,
                 TenantId = defaultTenant
             });
-            logger.LogInformation("🌱 [Seed] Seeded AdminDonVi role and assigned to alice_manager.");
         }
 
         var operatorRole = await context.Roles
@@ -74,7 +68,6 @@ public static class DbInitializer
             ]);
             await context.Roles.AddAsync(operatorRole);
 
-            // Gán role Operator cho bob_operator
             context.UserRoles.Add(new AppUserRole
             {
                 Id = Guid.NewGuid(),
@@ -82,10 +75,8 @@ public static class DbInitializer
                 RoleId = operatorRole.Id,
                 TenantId = defaultTenant
             });
-            logger.LogInformation("🌱 [Seed] Seeded NhanVienVanHanh role and assigned to bob_operator.");
         }
 
-        // 4. Seed vai trò mẫu cho Tenant B
         const string tenantB = "tenant-b";
         var tenantBAdminRole = await context.Roles
             .IgnoreQueryFilters()
@@ -115,7 +106,6 @@ public static class DbInitializer
                 RoleId = tenantBAdminRole.Id,
                 TenantId = tenantB
             });
-            logger.LogInformation("🌱 [Seed] Seeded AdminDonVi role for Tenant B and assigned to charlie_tenant_b.");
         }
 
         await context.SaveChangesAsync();

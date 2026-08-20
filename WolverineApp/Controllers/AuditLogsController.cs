@@ -21,9 +21,6 @@ public class AuditLogsController : ControllerBase
         _bus = bus;
     }
 
-    /// <summary>
-    /// [Query] Lấy danh sách lịch sử Audit Logs có phân trang (Quyền: AuditLogs:Read)
-    /// </summary>
     [HttpGet("list")]
     [HasPermission("AuditLogs", "Read")]
     public async Task<IActionResult> GetAuditLogs(

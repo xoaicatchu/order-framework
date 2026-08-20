@@ -39,17 +39,16 @@ public class UpdateRoleCommandHandler
 
         if (role is null)
         {
-            throw new KeyNotFoundException($"Không tìm thấy vai trò với ID: {command.Id}");
+            throw new KeyNotFoundException($"Role with ID '{command.Id}' not found.");
         }
 
         if (role.IsSystemRole)
         {
-            throw new InvalidOperationException("Không thể sửa đổi vai trò mặc định của hệ thống.");
+            throw new InvalidOperationException("System default roles cannot be modified.");
         }
 
         role.Update(command.Name, command.Description);
 
-        // Xóa sạch permissions cũ và gán permissions mới
         _dbContext.RolePermissions.RemoveRange(role.Permissions);
         role.Permissions.Clear();
 
@@ -67,8 +66,6 @@ public class UpdateRoleCommandHandler
         }
 
         await _dbContext.SaveChangesAsync(cancellationToken);
-
-        // Hủy toàn bộ cache quyền của đơn vị để các user nhận quyền mới ngay lập tức
         await _permissionService.InvalidateTenantPermissionsCacheAsync(tenantId, cancellationToken);
 
         return new RoleDto(

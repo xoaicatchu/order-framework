@@ -31,17 +31,16 @@ public class DeleteRoleCommandHandler
 
         if (role is null)
         {
-            throw new KeyNotFoundException($"Không tìm thấy vai trò với ID: {command.Id}");
+            throw new KeyNotFoundException($"Role with ID '{command.Id}' not found.");
         }
 
         if (role.IsSystemRole)
         {
-            throw new InvalidOperationException("Không thể xóa vai trò mặc định của hệ thống.");
+            throw new InvalidOperationException("System default roles cannot be deleted.");
         }
 
         _dbContext.Roles.Remove(role);
         await _dbContext.SaveChangesAsync(cancellationToken);
-
         await _permissionService.InvalidateTenantPermissionsCacheAsync(tenantId, cancellationToken);
 
         return true;

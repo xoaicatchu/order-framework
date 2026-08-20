@@ -21,14 +21,12 @@ public class DynamicPermissionPolicyProvider : IAuthorizationPolicyProvider
 
     public async Task<AuthorizationPolicy?> GetPolicyAsync(string policyName)
     {
-        // 1. Kiểm tra nếu policy đã được đăng ký tĩnh trước đó
         var policy = await _fallbackPolicyProvider.GetPolicyAsync(policyName);
         if (policy is not null)
         {
             return policy;
         }
 
-        // 2. Tự động sinh Dynamic Policy theo yêu cầu tại Runtime (Zero-declaration)
         return new AuthorizationPolicyBuilder(JwtBearerDefaults.AuthenticationScheme)
             .RequireAuthenticatedUser()
             .AddRequirements(new PermissionRequirement(policyName))

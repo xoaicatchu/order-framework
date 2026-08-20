@@ -20,10 +20,9 @@ public class GetPermissionsMatrixQueryHandler
     {
         var permissions = await _dbContext.Permissions
             .AsNoTracking()
-            .Where(p => !p.IsSystem) // Bỏ qua quyền root hệ thống khi vẽ ma trận đơn vị
+            .Where(p => !p.IsSystem)
             .ToListAsync(cancellationToken);
 
-        // 1. Tập hợp các Action làm Cột (Columns) theo thứ tự chuẩn
         var standardActionOrder = new List<string> { "Read", "Create", "Update", "Delete", "Cancel", "Approve", "Lock", "Assign" };
         var presentActions = permissions.Select(p => p.Action).Distinct().ToList();
 
@@ -33,7 +32,6 @@ public class GetPermissionsMatrixQueryHandler
             .Select(a => new MatrixColumnDto(a))
             .ToList();
 
-        // 2. Nhóm theo Module & Resource làm Dòng (Rows)
         var rows = permissions
             .GroupBy(p => new { p.Module, p.Resource })
             .OrderBy(g => g.Key.Module)

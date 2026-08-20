@@ -13,22 +13,21 @@ public static class PermissionDiscoveryService
 
     public static async Task DiscoverAndSyncPermissionsAsync(ApplicationDbContext dbContext, Assembly assembly, ILogger logger)
     {
-        var discoveredPermissions = new List<AppPermission>();
-
-        // 1. Luôn bảo đảm quyền tối cao System:Root tồn tại
-        discoveredPermissions.Add(new AppPermission
+        var discoveredPermissions = new List<AppPermission>
         {
-            Id = Guid.NewGuid(),
-            Code = RootPermissionCode,
-            Module = "System",
-            Resource = "System",
-            Action = "Root",
-            IsAutoDiscovered = true,
-            IsSystem = true,
-            CreatedAt = DateTime.UtcNow
-        });
+            new()
+            {
+                Id = Guid.NewGuid(),
+                Code = RootPermissionCode,
+                Module = "System",
+                Resource = "System",
+                Action = "Root",
+                IsAutoDiscovered = true,
+                IsSystem = true,
+                CreatedAt = DateTime.UtcNow
+            }
+        };
 
-        // 2. Quét toàn bộ Controllers trong Assembly
         var controllerTypes = assembly.GetTypes()
             .Where(t => typeof(ControllerBase).IsAssignableFrom(t) && !t.IsAbstract);
 
@@ -67,7 +66,6 @@ public static class PermissionDiscoveryService
             }
         }
 
-        // 3. Đồng bộ vào Database
         var existingCodes = await dbContext.Permissions
             .Select(p => p.Code)
             .ToListAsync();
@@ -80,11 +78,7 @@ public static class PermissionDiscoveryService
         {
             await dbContext.Permissions.AddRangeAsync(newPermissions);
             await dbContext.SaveChangesAsync();
-            logger.LogInformation("🔄 [Auto-Discovery] Synced {Count} new permissions into Database successfully.", newPermissions.Count);
-        }
-        else
-        {
-            logger.LogInformation("✅ [Auto-Discovery] All permissions are already up-to-date in Database.");
+            logger.LogInformation("Synced {Count} new permissions into database", newPermissions.Count);
         }
     }
 }

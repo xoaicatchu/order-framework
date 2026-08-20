@@ -26,7 +26,6 @@ using WolverineApp.Infrastructure.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// 1. Enterprise Structured Logging (Serilog từ appsettings.json)
 Log.Logger = new LoggerConfiguration()
     .ReadFrom.Configuration(builder.Configuration)
     .Enrich.FromLogContext()
@@ -34,7 +33,6 @@ Log.Logger = new LoggerConfiguration()
 
 builder.Host.UseSerilog();
 
-// 2. Cấu hình Forwarded Headers cho Kubernetes Ingress / API Gateway (Kong, Nginx, ALB)
 builder.Services.Configure<ForwardedHeadersOptions>(options =>
 {
     options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
@@ -42,7 +40,6 @@ builder.Services.Configure<ForwardedHeadersOptions>(options =>
     options.KnownProxies.Clear();
 });
 
-// 3. Security & IAM: JWT Bearer Authentication
 var jwtSecretKey = builder.Configuration["Jwt:SecretKey"] ?? "ThisIsASecretKeyForJwtAuthenticationInEnterpriseSystem123456!";
 var jwtIssuer = builder.Configuration["Jwt:Issuer"] ?? "EnterpriseDistributedCore";
 var jwtAudience = builder.Configuration["Jwt:Audience"] ?? "EnterpriseDistributedCoreClients";
@@ -69,15 +66,12 @@ builder.Services.AddAuthentication(options =>
     };
 });
 
-// 4. Security & IAM: 100% Zero-Declaration Dynamic RBAC (Auto-Discovery & Dynamic Policy Provider)
 builder.Services.AddScoped<IPermissionService, PermissionService>();
 builder.Services.AddSingleton<IAuthorizationHandler, PermissionAuthorizationHandler>();
 builder.Services.AddSingleton<IAuthorizationPolicyProvider, DynamicPermissionPolicyProvider>();
 builder.Services.AddAuthorization();
-
 builder.Services.AddSingleton<IAuthTokenService, AuthTokenService>();
 
-// 5. Rate Limiting (Chống DDoS & Brute-force)
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
@@ -93,7 +87,6 @@ builder.Services.AddRateLimiter(options =>
             }));
 });
 
-// 6. Controllers, Swagger with JWT Definition & Mapster
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
@@ -103,7 +96,7 @@ builder.Services.AddSwaggerGen(c =>
     var securityScheme = new OpenApiSecurityScheme
     {
         Name = "Authorization",
-        Description = "Nhập token JWT theo định dạng: Bearer {token}",
+        Description = "Enter JWT Bearer token: Bearer {token}",
         In = ParameterLocation.Header,
         Type = SecuritySchemeType.Http,
         Scheme = "bearer",
@@ -122,12 +115,10 @@ builder.Services.AddSwaggerGen(c =>
 
 Mapster.TypeAdapterConfig.GlobalSettings.Scan(System.Reflection.Assembly.GetExecutingAssembly());
 
-// 7. Telemetry & Context Providers
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ITenantProvider, TenantProvider>();
 builder.Services.AddScoped<ICurrentUserProvider, CurrentUserProvider>();
 
-// 8. Persistence, Unit Of Work, Repository & Idempotency
 builder.Services.AddScoped<AuditableEntityInterceptor>();
 
 builder.Services.AddDbContext<ApplicationDbContext>((sp, options) =>
@@ -144,7 +135,6 @@ builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 builder.Services.AddScoped(typeof(IRepository<>), typeof(Repository<>));
 builder.Services.AddScoped<IIdempotencyService, IdempotencyService>();
 
-// 9. Enterprise Hybrid Caching (L1 In-Memory + L2 Redis Distributed Cache)
 #pragma warning disable EXTEXP0018
 builder.Services.AddHybridCache(options =>
 {
@@ -167,36 +157,29 @@ if (!string.IsNullOrWhiteSpace(redisConnectionString))
 }
 
 builder.Services.AddSingleton<ICacheService, HybridCacheService>();
-
-// 10. Transactional Outbox Background Processor (Reliable Event Dispatcher)
 builder.Services.AddHostedService<OutboxBackgroundProcessor>();
 
-// 11. Enterprise Health Checks (Liveness, Readiness & System Telemetry)
 builder.Services.AddHealthChecks()
     .AddDbContextCheck<ApplicationDbContext>(name: "database", tags: ["ready"])
     .AddCheck<SystemMemoryHealthCheck>(name: "memory", tags: ["live", "ready"]);
 
-// 12. Wolverine Message Bus & CQRS Pipeline
 builder.Host.UseWolverine(opts =>
 {
     opts.ServiceLocationPolicy = ServiceLocationPolicy.AllowedButWarn;
     opts.UseFluentValidation();
-    // Tự động kích hoạt AOP Middleware xóa cache sau khi bất kỳ Command nào hoàn tất
     opts.Policies.AddMiddleware(typeof(CacheInvalidationMiddleware));
 });
 
 var app = builder.Build();
 
-// 13. Auto-Creation & Dynamic RBAC Seed on startup
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
     db.Database.EnsureCreated();
     await DbInitializer.SeedInitialDataAsync(db, app.Logger);
-    Log.Information("Database schema initialized and Dynamic RBAC seeded successfully");
+    Log.Information("Database schema initialized and dynamic permissions synchronized");
 }
 
-// 14. HTTP Telemetry & Security Pipeline
 app.UseForwardedHeaders();
 app.UseMiddleware<CorrelationIdMiddleware>();
 app.UseRateLimiter();
@@ -227,15 +210,10 @@ app.UseSwaggerUI(c =>
 });
 
 app.UseHttpsRedirection();
-
-// Kích hoạt Authentication & Authorization
 app.UseAuthentication();
 app.UseAuthorization();
-
-// Kích hoạt Idempotency-Key Middleware (Sau Auth để trích xuất Tenant an toàn)
 app.UseMiddleware<IdempotencyKeyMiddleware>();
 
-// 15. Map Health Check Endpoints (K8s Liveness / Readiness Probes)
 app.MapHealthChecks("/health/live", new HealthCheckOptions
 {
     Predicate = check => check.Tags.Contains("live"),

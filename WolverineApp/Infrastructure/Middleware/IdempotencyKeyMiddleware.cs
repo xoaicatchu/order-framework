@@ -43,10 +43,9 @@ public class IdempotencyKeyMiddleware
         var tenantId = tenantProvider.TenantId;
         var cacheKey = $"idempotency:{tenantId}:{idempotencyKey}";
 
-        // 1. Kiểm tra nếu request với Idempotency-Key này đã được xử lý
         if (_idempotencyStore.TryGetValue(cacheKey, out var cachedResponse))
         {
-            _logger.LogInformation("⚡ [Idempotency] Duplicate request detected for Key: {Key}. Returning cached response.", idempotencyKey);
+            _logger.LogInformation("Duplicate request detected for key: {Key}. Returning cached response.", idempotencyKey);
 
             context.Response.StatusCode = cachedResponse.StatusCode;
             context.Response.ContentType = cachedResponse.ContentType;
@@ -56,7 +55,6 @@ public class IdempotencyKeyMiddleware
             return;
         }
 
-        // 2. Nếu là request lần đầu, thực thi và lưu kết quả
         var originalBodyStream = context.Response.Body;
         using var responseBodyMemoryStream = new MemoryStream();
         context.Response.Body = responseBodyMemoryStream;
