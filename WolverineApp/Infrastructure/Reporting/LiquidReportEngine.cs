@@ -1,5 +1,4 @@
 using System.Collections.Concurrent;
-using System.Text.Json;
 using Fluid;
 using Fluid.Values;
 using Microsoft.Extensions.Logging;
@@ -12,7 +11,7 @@ namespace WolverineApp.Infrastructure.Reporting;
 public class LiquidReportEngine : IReportEngine
 {
     private static readonly FluidParser Parser = new();
-    private static readonly ConcurrentDictionary<string, IFluidTemplate> TemplateCache = new();
+    private static readonly ConcurrentDictionary<string, (string RawContent, IFluidTemplate Template)> TemplateCache = new();
     private readonly IReportTemplateStore _templateStore;
     private readonly ITenantProvider _tenantProvider;
     private readonly IEnumerable<IDocumentRenderer> _renderers;
@@ -41,14 +40,21 @@ public class LiquidReportEngine : IReportEngine
         }
 
         var cacheKey = $"{targetTenant}:{templateCode}";
-        var template = TemplateCache.GetOrAdd(cacheKey, _ =>
+
+        IFluidTemplate template;
+        if (TemplateCache.TryGetValue(cacheKey, out var cached) && cached.RawContent == rawTemplate)
+        {
+            template = cached.Template;
+        }
+        else
         {
             if (!Parser.TryParse(rawTemplate, out var compiled, out var error))
             {
                 throw new InvalidOperationException($"Error compiling Liquid template '{templateCode}': {error}");
             }
-            return compiled;
-        });
+            TemplateCache[cacheKey] = (rawTemplate, compiled);
+            template = compiled;
+        }
 
         var context = CreateTemplateContext(dataModel);
         return await template.RenderAsync(context);
@@ -60,17 +66,14 @@ public class LiquidReportEngine : IReportEngine
         _logger.LogInformation("Rendering report template '{TemplateCode}' in format '{Format}' for tenant '{TenantId}'",
             request.TemplateCode, request.Format, tenantId);
 
-        // 1. Biên dịch và nạp dữ liệu vào HTML Layout
         var compiledHtml = await RenderHtmlAsync(request.TemplateCode, request.DataModel, tenantId, cancellationToken);
 
-        // 2. Tìm renderer phù hợp
         var renderer = _renderers.FirstOrDefault(r => r.SupportedFormat == request.Format);
         if (renderer is null)
         {
             throw new NotSupportedException($"Report output format '{request.Format}' is not supported by any registered renderer.");
         }
 
-        // 3. Kết xuất tài liệu nhị phân (PDF / HTML / Excel)
         var content = await renderer.RenderAsync(request.TemplateCode, compiledHtml, request.DataModel, request.Parameters, cancellationToken);
 
         var (contentType, extension) = request.Format switch
@@ -89,7 +92,10 @@ public class LiquidReportEngine : IReportEngine
 
     private static TemplateContext CreateTemplateContext(object dataModel)
     {
-        var options = new TemplateOptions();
+        var options = new TemplateOptions
+        {
+            MemberAccessStrategy = UnsafeMemberAccessStrategy.Instance
+        };
 
         // 1. Filter định dạng tiền tệ: {{ amount | format_currency: 'USD' }}
         options.Filters.AddFilter("format_currency", (input, arguments, ctx) =>
