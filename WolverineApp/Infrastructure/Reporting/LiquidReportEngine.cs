@@ -29,6 +29,21 @@ public class LiquidReportEngine : IReportEngine
         _logger = logger;
     }
 
+    public TemplateValidationResult ValidateTemplate(string rawTemplateContent)
+    {
+        if (string.IsNullOrWhiteSpace(rawTemplateContent))
+        {
+            return TemplateValidationResult.Error("Nội dung template không được để trống.");
+        }
+
+        if (!Parser.TryParse(rawTemplateContent, out _, out var error))
+        {
+            return TemplateValidationResult.Error($"Lỗi cú pháp Liquid: {error}");
+        }
+
+        return TemplateValidationResult.Success();
+    }
+
     public async Task<string> RenderHtmlAsync(string templateCode, object dataModel, string? tenantId = null, CancellationToken cancellationToken = default)
     {
         var targetTenant = tenantId ?? _tenantProvider.TenantId;
@@ -50,7 +65,7 @@ public class LiquidReportEngine : IReportEngine
         {
             if (!Parser.TryParse(rawTemplate, out var compiled, out var error))
             {
-                throw new InvalidOperationException($"Error compiling Liquid template '{templateCode}': {error}");
+                throw new InvalidOperationException($"Lỗi biên dịch Liquid template '{templateCode}': {error}");
             }
             TemplateCache[cacheKey] = (rawTemplate, compiled);
             template = compiled;

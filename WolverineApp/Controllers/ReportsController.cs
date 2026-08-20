@@ -38,6 +38,14 @@ public class ReportsController : ControllerBase
         return Ok(ApiResponse<List<string>>.Ok(templates));
     }
 
+    [HttpPost("templates/validate")]
+    [HasPermission("Reports", "Read")]
+    public IActionResult ValidateTemplate([FromBody] ValidateTemplateRequest request)
+    {
+        var result = _reportEngine.ValidateTemplate(request.TemplateContent);
+        return Ok(ApiResponse<TemplateValidationResult>.Ok(result));
+    }
+
     [HttpPost("render")]
     [HasPermission("Reports", "Export")]
     public async Task<IActionResult> RenderReport([FromBody] ReportRenderRequest request)

@@ -1,0 +1,468 @@
+﻿<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hóa Đơn Bán Hàng & Xuất Kho #</title>
+    <style>
+        @page {
+            size: A4 portrait;
+            margin: 12mm 15mm 15mm 15mm;
+        }
+        @media print {
+            .no-print { display: none !important; }
+            body { background: none; }
+            .invoice-card { box-shadow: none !important; border: none !important; margin: 0 !important; }
+        }
+        * { box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            font-size: 13px;
+            color: #2c3e50;
+            line-height: 1.4;
+            background-color: #f4f6f9;
+            margin: 0;
+            padding: 20px;
+        }
+        .invoice-card {
+            max-width: 800px;
+            margin: 0 auto;
+            background: #ffffff;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.08);
+            position: relative;
+            overflow: hidden;
+        }
+        /* Dấu mộc Watermark mờ chìm 'ĐÃ THANH TOÁN' bằng CSS */
+        .watermark {
+            position: absolute;
+            top: 45%;
+            left: 50%;
+            transform: translate(-50%, -50%) rotate(-30deg);
+            font-size: 65px;
+            font-weight: 900;
+            color: rgba(40, 167, 69, 0.12);
+            text-transform: uppercase;
+            letter-spacing: 5px;
+            pointer-events: none;
+            border: 5px dashed rgba(40, 167, 69, 0.18);
+            padding: 10px 40px;
+            border-radius: 12px;
+            user-select: none;
+        }
+        .header-section {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 2px solid #205493;
+            padding-bottom: 15px;
+            margin-bottom: 20px;
+        }
+        .company-info h2 {
+            margin: 0 0 5px 0;
+            font-size: 18px;
+            font-weight: 800;
+            color: #205493;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .company-info p {
+            margin: 2px 0;
+            font-size: 11.5px;
+            color: #555;
+        }
+        .qr-box {
+            text-align: right;
+        }
+        .qr-box img {
+            width: 80px;
+            height: 80px;
+            border: 1px solid #e2e8f0;
+            border-radius: 4px;
+            padding: 2px;
+        }
+        .doc-title-container {
+            text-align: center;
+            margin: 15px 0 20px 0;
+        }
+        .doc-title {
+            font-size: 22px;
+            font-weight: 800;
+            color: #c53030;
+            text-transform: uppercase;
+            margin: 0;
+        }
+        .doc-meta {
+            font-size: 11.5px;
+            color: #718096;
+            margin-top: 4px;
+            font-style: italic;
+        }
+        .info-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        .info-panel {
+            background-color: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            padding: 12px 15px;
+        }
+        .info-panel h4 {
+            margin: 0 0 8px 0;
+            font-size: 12px;
+            text-transform: uppercase;
+            color: #2b6cb0;
+            font-weight: 700;
+            border-bottom: 1px solid #e2e8f0;
+            padding-bottom: 4px;
+        }
+        .info-row {
+            display: flex;
+            margin-bottom: 4px;
+            font-size: 12px;
+        }
+        .info-label {
+            width: 110px;
+            color: #64748b;
+            font-weight: 500;
+        }
+        .info-val {
+            flex: 1;
+            color: #1e293b;
+            font-weight: 600;
+        }
+        .status-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 700;
+            background-color: #dcfce7;
+            color: #15803d;
+        }
+        /* Bảng danh sách hàng hóa */
+        .items-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 15px;
+        }
+        .items-table th {
+            background-color: #205493;
+            color: #ffffff;
+            padding: 10px 8px;
+            font-size: 12px;
+            text-transform: uppercase;
+            font-weight: 700;
+            border: 1px solid #1a4477;
+        }
+        .items-table td {
+            padding: 9px 8px;
+            font-size: 12px;
+            border: 1px solid #e2e8f0;
+            color: #334155;
+        }
+        .items-table tbody tr:nth-child(even) {
+            background-color: #f8fafc;
+        }
+        .items-table tbody tr:hover {
+            background-color: #f1f5f9;
+        }
+        .text-center { text-align: center; }
+        .text-right { text-align: right; }
+        .text-bold { font-weight: 700; }
+        
+        .calculation-section {
+            display: flex;
+            justify-content: flex-end;
+            margin-bottom: 15px;
+        }
+        .calc-table {
+            width: 320px;
+            border-collapse: collapse;
+        }
+        .calc-table td {
+            padding: 5px 8px;
+            font-size: 12px;
+        }
+        .calc-table .grand-total {
+            font-size: 15px;
+            font-weight: 800;
+            color: #c53030;
+            border-top: 2px solid #cbd5e1;
+            padding-top: 8px;
+        }
+        .words-section {
+            background-color: #eff6ff;
+            border-left: 4px solid #3b82f6;
+            padding: 10px 15px;
+            margin-bottom: 25px;
+            border-radius: 0 6px 6px 0;
+            font-size: 12px;
+        }
+        .words-section span.words-text {
+            color: #1d4ed8;
+            font-weight: 700;
+            font-style: italic;
+        }
+        .signature-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            text-align: center;
+            margin-top: 30px;
+            margin-bottom: 20px;
+        }
+        .sig-box h5 {
+            margin: 0 0 3px 0;
+            font-size: 12px;
+            text-transform: uppercase;
+            font-weight: 700;
+        }
+        .sig-box p {
+            margin: 0;
+            font-size: 11px;
+            color: #94a3b8;
+            font-style: italic;
+        }
+        .sig-spacer {
+            height: 65px;
+        }
+        .sig-name {
+            font-weight: 700;
+            font-size: 12px;
+            color: #1e293b;
+        }
+        .footer-note {
+            border-top: 1px solid #e2e8f0;
+            padding-top: 10px;
+            margin-top: 20px;
+            display: flex;
+            justify-content: space-between;
+            font-size: 10.5px;
+            color: #94a3b8;
+        }
+        /* Nút Action điều khiển in cho Web Preview */
+        .action-bar {
+            max-width: 800px;
+            margin: 0 auto 15px auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: #ffffff;
+            padding: 12px 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+        }
+        .btn {
+            background-color: #2563eb;
+            color: #fff;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-weight: 600;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            text-decoration: none;
+            font-size: 12.5px;
+            transition: all 0.2s;
+        }
+        .btn:hover { background-color: #1d4ed8; }
+        .btn-pdf { background-color: #dc2626; }
+        .btn-pdf:hover { background-color: #b91c1c; }
+    </style>
+</head>
+<body>
+
+    <!-- Thanh điều khiển In ấn khi mở xem trên Trình duyệt Web (Ẩn khi in ấn) -->
+    <div class="action-bar no-print">
+        <div style="font-weight: 600; color: #334155;">
+            📄 Chế độ Xem trước Bản in (EDAP Liquid Report Engine)
+        </div>
+        <div style="display: flex; gap: 10px;">
+            <button class="btn" onclick="triggerPrint()">
+                🖨️ In Phiếu Ngay (window.print)
+            </button>
+            <a id="btnDownloadPdf" href="/api/reports/orders//print?format=Pdf" class="btn btn-pdf" target="_blank">
+                📑 Tải File PDF Vector
+            </a>
+        </div>
+    </div>
+
+    <!-- Khung Hóa Đơn A4 -->
+    <div class="invoice-card">
+        
+        <!-- Watermark chìm -->
+        <div class="watermark" id="stampWatermark">ĐÃ THANH TOÁN</div>
+
+        <!-- 1. Header Đơn vị & Mã QR -->
+        <div class="header-section">
+            <div class="company-info">
+                <h2>HỆ THỐNG Y TẾ QUẢN LÝ DOANH NGHIỆP PHÂN TÁN</h2>
+                <p><strong>Đơn vị:</strong> Bệnh Viện Đa Khoa Quốc Tế Hà Nội (Mã đơn vị: hospital-main)</p>
+                <p><strong>Địa chỉ:</strong> Số 18, Đường Công Nghệ Cao, Khu Đô Thị Nam Từ Liêm, Hà Nội</p>
+                <p><strong>Tổng đài CSKH:</strong> 1900-6868 | <strong>Mã số thuế:</strong> 0108998877-001</p>
+            </div>
+            <div class="qr-box">
+                <!-- Liquid Filter sinh mã QR Code Base64 nhúng thẳng vào thẻ <img> -->
+                <img src="" alt="Mã tra cứu hóa đơn QR" />
+                <div style="font-size: 9px; color: #64748b; margin-top: 2px;">Quét tra cứu gốc</div>
+            </div>
+        </div>
+
+        <!-- 2. Tiêu đề tài liệu -->
+        <div class="doc-title-container">
+            <h1 class="doc-title">HÓA ĐƠN BÁN HÀNG & PHIẾU XUẤT KHO</h1>
+            <div class="doc-meta">
+                Số chứng từ: <strong>#</strong> &nbsp;|&nbsp; 
+                Ngày lập: <strong></strong>
+            </div>
+        </div>
+
+        <!-- 3. Thông tin Khách hàng & Giao dịch -->
+        <div class="info-grid">
+            <div class="info-panel">
+                <h4>Thông tin người mua / Bệnh nhân</h4>
+                <div class="info-row">
+                    <span class="info-label">Họ và tên:</span>
+                    <span class="info-val" style="color: #1e40af; font-size: 13px;"></span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Email / SĐT:</span>
+                    <span class="info-val"></span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Mã định danh:</span>
+                    <span class="info-val">KH-</span>
+                </div>
+            </div>
+
+            <div class="info-panel">
+                <h4>Thông tin thanh toán & Xuất kho</h4>
+                <div class="info-row">
+                    <span class="info-label">Trạng thái đơn:</span>
+                    <span class="info-val"><span class="status-badge"></span></span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Phương thức TT:</span>
+                    <span class="info-val">Chuyển khoản VNPAY / VietQR</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Kênh bán hàng:</span>
+                    <span class="info-val">Hệ thống Quầy Thu Ngân #03</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- 4. Bảng chi tiết sản phẩm / Dịch vụ (Liquid For Loop) -->
+        <table class="items-table">
+            <thead>
+                <tr>
+                    <th style="width: 5%;">STT</th>
+                    <th style="width: 43%; text-align: left;">Tên Sản Phẩm / Dịch Vụ Y Tế</th>
+                    <th style="width: 14%;">Mã SKU</th>
+                    <th style="width: 8%;">SL</th>
+                    <th style="width: 14%; text-align: right;">Đơn Giá</th>
+                    <th style="width: 16%; text-align: right;">Thành Tiền</th>
+                </tr>
+            </thead>
+            <tbody>
+                <!-- Vòng lặp duyệt qua Items bằng Liquid -->
+                
+            </tbody>
+        </table>
+
+        <!-- 5. Tổng tiền tính toán -->
+        <div class="calculation-section">
+            <table class="calc-table">
+                <tr>
+                    <td>Cộng tiền hàng:</td>
+                    <td class="text-right text-bold">$0.00</td>
+                </tr>
+                <tr>
+                    <td>Thuế suất VAT (0%):</td>
+                    <td class="text-right">$0.00</td>
+                </tr>
+                <tr>
+                    <td>Chiết khấu / Giảm trừ:</td>
+                    <td class="text-right">$0.00</td>
+                </tr>
+                <tr class="grand-total">
+                    <td>TỔNG THANH TOÁN:</td>
+                    <td class="text-right">$0.00</td>
+                </tr>
+            </table>
+        </div>
+
+        <!-- 6. Đọc tiền thành chữ tiếng Việt (Liquid Custom Filter) -->
+        <div class="words-section">
+            <strong>Số tiền viết bằng chữ: </strong>
+            <span class="words-text">Không đô la Mỹ chẵn.</span>
+        </div>
+
+        <!-- 7. Chữ ký 3 bên -->
+        <div class="signature-grid">
+            <div class="sig-box">
+                <h5>Người Lập Phiếu</h5>
+                <p>(Ký, ghi rõ họ tên)</p>
+                <div class="sig-spacer"></div>
+                <div class="sig-name">Thu Ngân: Lê Thu Trang</div>
+            </div>
+            <div class="sig-box">
+                <h5>Thủ Kho / Dược Sĩ</h5>
+                <p>(Ký, ghi rõ họ tên)</p>
+                <div class="sig-spacer"></div>
+                <div class="sig-name">DS. Phạm Quốc Hùng</div>
+            </div>
+            <div class="sig-box">
+                <h5>Khách Hàng / Bệnh Nhân</h5>
+                <p>(Ký, ghi rõ họ tên)</p>
+                <div class="sig-spacer"></div>
+                <div class="sig-name"></div>
+            </div>
+        </div>
+
+        <!-- 8. Footer ghi chú -->
+        <div class="footer-note">
+            <div>Chứng từ điện tử bảo mật trích xuất từ <strong>EDAP Enterprise Platform v2.0</strong></div>
+            <div>Thời điểm in: <span id="printTime"></span></div>
+        </div>
+
+    </div>
+
+    <!-- Đoạn JavaScript nhúng trực tiếp trong Liquid để chứng minh khả năng tương tác Client -->
+    <script>
+        // In thời gian hiện tại lúc tải trang
+        const now = new Date();
+        document.getElementById('printTime').innerText = now.toLocaleString('vi-VN');
+
+        // Hàm gọi lệnh In Trình duyệt
+        function triggerPrint() {
+            window.print();
+        }
+
+        // Logic JavaScript kiểm tra dữ liệu do Liquid đẩy vào
+        const orderStatus = "";
+        const totalAmount = ;
+
+        console.log("⚡ [EDAP Report Engine] Loaded Order Invoice:", {
+            orderNumber: "",
+            status: orderStatus,
+            total: totalAmount,
+            customer: ""
+        });
+
+        // Nếu trạng thái là Cancelled, tự động đổi dấu mộc Watermark sang màu Đỏ
+        if (orderStatus.toLowerCase() === "cancelled") {
+            const stamp = document.getElementById("stampWatermark");
+            stamp.innerText = "ĐÃ HỦY BỎ";
+            stamp.style.color = "rgba(220, 38, 38, 0.15)";
+            stamp.style.borderColor = "rgba(220, 38, 38, 0.25)";
+        }
+    </script>
+</body>
+</html>
