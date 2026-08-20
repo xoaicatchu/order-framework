@@ -36,8 +36,10 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
     public DbSet<AppRolePermission> RolePermissions => Set<AppRolePermission>();
     public DbSet<AppUserRole> UserRoles => Set<AppUserRole>();
 
-    // Report Templates
+    // Report Templates & Semantic Reporting
     public DbSet<WolverineApp.Domain.Reporting.ReportTemplate> ReportTemplates => Set<WolverineApp.Domain.Reporting.ReportTemplate>();
+    public DbSet<WolverineApp.Domain.Reporting.SemanticDataset> SemanticDatasets => Set<WolverineApp.Domain.Reporting.SemanticDataset>();
+    public DbSet<WolverineApp.Domain.Reporting.ReportConfiguration> ReportConfigurations => Set<WolverineApp.Domain.Reporting.ReportConfiguration>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -48,11 +50,13 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
         modelBuilder.Entity<OrderItem>().HasQueryFilter(e => !e.IsDeleted && e.TenantId == _tenantProvider.TenantId);
         modelBuilder.Entity<AuditLog>().HasQueryFilter(e => e.TenantId == _tenantProvider.TenantId);
         
-        // Multi-Tenancy on Dynamic Roles & Report Templates
+        // Multi-Tenancy on Dynamic Roles & Report Templates & Configurations
         modelBuilder.Entity<AppRole>().HasQueryFilter(e => !e.IsDeleted && (e.TenantId == _tenantProvider.TenantId || e.IsSystemRole));
         modelBuilder.Entity<AppRolePermission>().HasQueryFilter(e => e.TenantId == _tenantProvider.TenantId || e.Role.IsSystemRole);
         modelBuilder.Entity<AppUserRole>().HasQueryFilter(e => e.TenantId == _tenantProvider.TenantId);
         modelBuilder.Entity<WolverineApp.Domain.Reporting.ReportTemplate>().HasQueryFilter(e => !e.IsDeleted && (e.TenantId == _tenantProvider.TenantId || e.IsSystemDefault));
+        modelBuilder.Entity<WolverineApp.Domain.Reporting.SemanticDataset>().HasQueryFilter(e => !e.IsDeleted && e.IsActive);
+        modelBuilder.Entity<WolverineApp.Domain.Reporting.ReportConfiguration>().HasQueryFilter(e => !e.IsDeleted && e.TenantId == _tenantProvider.TenantId);
 
         modelBuilder.Entity<WolverineApp.Domain.Reporting.ReportTemplate>(entity =>
         {
@@ -63,6 +67,31 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
             entity.Property(e => e.Description).HasMaxLength(500);
             entity.Property(e => e.Content).IsRequired();
             entity.Property(e => e.TenantId).IsRequired().HasMaxLength(50);
+            entity.HasIndex(e => new { e.TenantId, e.Code }).IsUnique();
+        });
+
+        modelBuilder.Entity<WolverineApp.Domain.Reporting.SemanticDataset>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Code).IsRequired().HasMaxLength(100);
+            entity.Property(e => e.Name).IsRequired().HasMaxLength(255);
+            entity.Property(e => e.Category).IsRequired().HasMaxLength(100);
+            entity.Property(e => e.Description).HasMaxLength(500);
+            entity.Property(e => e.FieldsMetadataJson).IsRequired();
+            entity.Property(e => e.BaseQuerySql).IsRequired();
+            entity.HasIndex(e => e.Code).IsUnique();
+        });
+
+        modelBuilder.Entity<WolverineApp.Domain.Reporting.ReportConfiguration>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Code).IsRequired().HasMaxLength(100);
+            entity.Property(e => e.Name).IsRequired().HasMaxLength(255);
+            entity.Property(e => e.DatasetCode).IsRequired().HasMaxLength(100);
+            entity.Property(e => e.TenantId).IsRequired().HasMaxLength(50);
+            entity.Property(e => e.SelectedFieldsJson).IsRequired();
+            entity.Property(e => e.FilterConfigJson).IsRequired();
+            entity.Property(e => e.TemplateContent).IsRequired();
             entity.HasIndex(e => new { e.TenantId, e.Code }).IsUnique();
         });
 

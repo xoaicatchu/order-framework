@@ -165,6 +165,7 @@ builder.Services.AddHostedService<OutboxBackgroundProcessor>();
 
 // Enterprise Template-Driven Reporting & Document Rendering Engine (Database-Backed Template Store)
 builder.Services.AddSingleton<IReportTemplateStore, WolverineApp.Infrastructure.Reporting.TemplateStores.DbReportTemplateStore>();
+builder.Services.AddScoped<WolverineApp.Application.Common.Reporting.ISemanticDatasetService, WolverineApp.Infrastructure.Reporting.SemanticDatasetService>();
 builder.Services.AddSingleton<WolverineApp.Application.Common.Reporting.IDocumentRenderer, WolverineApp.Infrastructure.Reporting.Renderers.QuestPdfDocumentRenderer>();
 builder.Services.AddSingleton<WolverineApp.Application.Common.Reporting.IDocumentRenderer, WolverineApp.Infrastructure.Reporting.Renderers.HtmlDocumentRenderer>();
 builder.Services.AddScoped<WolverineApp.Application.Common.Reporting.IReportEngine, WolverineApp.Infrastructure.Reporting.LiquidReportEngine>();
