@@ -136,6 +136,61 @@ public class LiquidReportEngine : IReportEngine
             return new StringValue(BarcodeQrHelper.GenerateQrCodeBase64(text));
         });
 
+        // 5. Filter tính tổng (SUM Group/Table): {{ items | sum: 'Total' }}
+        options.Filters.AddFilter("sum", (input, arguments, ctx) =>
+        {
+            var propertyName = arguments.At(0).ToStringValue();
+            decimal total = 0;
+            var items = input.Enumerate(ctx);
+            foreach (var item in items)
+            {
+                if (string.IsNullOrEmpty(propertyName))
+                {
+                    total += (decimal)item.ToNumberValue();
+                }
+                else
+                {
+                    var propVal = item.GetValueAsync(propertyName, ctx).GetAwaiter().GetResult();
+                    total += (decimal)propVal.ToNumberValue();
+                }
+            }
+            return NumberValue.Create(total);
+        });
+
+        // 6. Filter gom nhóm (GROUP BY): {{ items | group_by: 'Category' }}
+        options.Filters.AddFilter("group_by", (input, arguments, ctx) =>
+        {
+            var propertyName = arguments.At(0).ToStringValue() ?? "Category";
+            var resultList = new List<FluidValue>();
+            var items = input.Enumerate(ctx);
+            var dict = new Dictionary<string, List<object?>>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var item in items)
+            {
+                var keyVal = item.GetValueAsync(propertyName, ctx).GetAwaiter().GetResult();
+                var keyStr = keyVal.ToStringValue() ?? "Khác";
+                if (!dict.TryGetValue(keyStr, out var list))
+                {
+                    list = new List<object?>();
+                    dict[keyStr] = list;
+                }
+                list.Add(item.ToObjectValue());
+            }
+
+            foreach (var kvp in dict)
+            {
+                var groupObj = new Dictionary<string, object>
+                {
+                    { "Key", kvp.Key },
+                    { "Items", kvp.Value },
+                    { "Count", kvp.Value.Count }
+                };
+                resultList.Add(FluidValue.Create(groupObj, options));
+            }
+
+            return new ArrayValue(resultList);
+        });
+
         var context = new TemplateContext(dataModel, options);
         return context;
     }
