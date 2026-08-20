@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using WolverineApp.Domain.Identity;
+using WolverineApp.Infrastructure.Auth;
 
 namespace WolverineApp.Infrastructure.Data;
 
@@ -8,20 +9,23 @@ public static class DbInitializer
 {
     public static async Task SeedInitialDataAsync(ApplicationDbContext context, ILogger logger)
     {
-        // 1. Seed vai trò System Role (Root Admin)
+        // 1. Tự động quét Controller/Action và đồng bộ toàn bộ Permissions vào Database
+        await PermissionDiscoveryService.DiscoverAndSyncPermissionsAsync(context, typeof(DbInitializer).Assembly, logger);
+
+        // 2. Seed vai trò System Role (Root Admin)
         var systemRootRole = await context.Roles
             .IgnoreQueryFilters()
             .FirstOrDefaultAsync(r => r.IsSystemRole && r.Name == "SystemRootAdmin");
 
         if (systemRootRole is null)
         {
-            systemRootRole = AppRole.Create("SystemRootAdmin", "Vai trò Quản trị viên tối cao toàn hệ thống (Root)", "system", isSystemRole: true);
-            systemRootRole.SetPermissions([SystemPermissions.SystemRoot]);
+            systemRootRole = AppRole.Create("SystemRootAdmin", "System Root Super Admin Role", "system", isSystemRole: true);
+            systemRootRole.SetPermissions([PermissionDiscoveryService.RootPermissionCode]);
             await context.Roles.AddAsync(systemRootRole);
             logger.LogInformation("🌱 [Seed] Seeded System Root Role.");
         }
 
-        // 2. Seed vai trò mẫu cho Default Tenant (Admin Đơn Vị & Nhân Viên Vận Hành)
+        // 3. Seed vai trò mẫu cho Default Tenant (Admin Đơn Vị & Nhân Viên Vận Hành)
         const string defaultTenant = "default-tenant";
 
         var adminDonViRole = await context.Roles
@@ -30,18 +34,18 @@ public static class DbInitializer
 
         if (adminDonViRole is null)
         {
-            adminDonViRole = AppRole.Create("AdminDonVi", "Quản trị viên đơn vị (toàn quyền quản lý đơn hàng & tùy biến vai trò đơn vị)", defaultTenant);
+            adminDonViRole = AppRole.Create("AdminDonVi", "Tenant Unit Administrator", defaultTenant);
             adminDonViRole.SetPermissions([
-                SystemPermissions.OrdersRead,
-                SystemPermissions.OrdersCreate,
-                SystemPermissions.OrdersUpdate,
-                SystemPermissions.OrdersCancel,
-                SystemPermissions.RolesRead,
-                SystemPermissions.RolesCreate,
-                SystemPermissions.RolesUpdate,
-                SystemPermissions.RolesDelete,
-                SystemPermissions.RolesAssign,
-                SystemPermissions.AuditLogsRead
+                "Orders:Read",
+                "Orders:Create",
+                "Orders:Update",
+                "Orders:Cancel",
+                "Roles:Read",
+                "Roles:Create",
+                "Roles:Update",
+                "Roles:Delete",
+                "Roles:Assign",
+                "AuditLogs:Read"
             ]);
             await context.Roles.AddAsync(adminDonViRole);
 
@@ -62,11 +66,11 @@ public static class DbInitializer
 
         if (operatorRole is null)
         {
-            operatorRole = AppRole.Create("NhanVienVanHanh", "Nhân viên xử lý đơn hàng (không có quyền hủy đơn)", defaultTenant);
+            operatorRole = AppRole.Create("NhanVienVanHanh", "Order Operations Staff", defaultTenant);
             operatorRole.SetPermissions([
-                SystemPermissions.OrdersRead,
-                SystemPermissions.OrdersCreate,
-                SystemPermissions.OrdersUpdate
+                "Orders:Read",
+                "Orders:Create",
+                "Orders:Update"
             ]);
             await context.Roles.AddAsync(operatorRole);
 
@@ -81,7 +85,7 @@ public static class DbInitializer
             logger.LogInformation("🌱 [Seed] Seeded NhanVienVanHanh role and assigned to bob_operator.");
         }
 
-        // 3. Seed vai trò mẫu cho Tenant B
+        // 4. Seed vai trò mẫu cho Tenant B
         const string tenantB = "tenant-b";
         var tenantBAdminRole = await context.Roles
             .IgnoreQueryFilters()
@@ -89,18 +93,18 @@ public static class DbInitializer
 
         if (tenantBAdminRole is null)
         {
-            tenantBAdminRole = AppRole.Create("AdminDonVi", "Quản trị viên đơn vị B", tenantB);
+            tenantBAdminRole = AppRole.Create("AdminDonVi", "Tenant B Administrator", tenantB);
             tenantBAdminRole.SetPermissions([
-                SystemPermissions.OrdersRead,
-                SystemPermissions.OrdersCreate,
-                SystemPermissions.OrdersUpdate,
-                SystemPermissions.OrdersCancel,
-                SystemPermissions.RolesRead,
-                SystemPermissions.RolesCreate,
-                SystemPermissions.RolesUpdate,
-                SystemPermissions.RolesDelete,
-                SystemPermissions.RolesAssign,
-                SystemPermissions.AuditLogsRead
+                "Orders:Read",
+                "Orders:Create",
+                "Orders:Update",
+                "Orders:Cancel",
+                "Roles:Read",
+                "Roles:Create",
+                "Roles:Update",
+                "Roles:Delete",
+                "Roles:Assign",
+                "AuditLogs:Read"
             ]);
             await context.Roles.AddAsync(tenantBAdminRole);
 

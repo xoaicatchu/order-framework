@@ -68,33 +68,38 @@ Authorization: Bearer {{adminToken}}
 
 
 ###############################################################################
-# 2. DYNAMIC ROLES & UI PERMISSION MANAGEMENT (DÀNH CHO UI ĐƠN VỊ TÙY BIẾN)
+# 2. SMART MATRIX & UI PERMISSION MANAGEMENT (DÀNH CHO UI ĐƠN VỊ TÙY BIẾN)
 ###############################################################################
 
-### 2.1 [UI] Lấy danh mục tất cả quyền hạn chuẩn phân theo Module để hiển thị cây checkbox
-# @name getUiPermissions
+### 2.1 [UI] Lấy cấu trúc Smart Matrix để Frontend vẽ bảng Ma trận phân quyền (Có ô Checkbox và ô Gạch ngang)
+# @name getPermissionsMatrix
+GET {{baseUrl}}/api/roles/permissions/matrix
+
+
+### 2.2 Lấy danh mục tất cả quyền hạn có sẵn trong hệ thống
+# @name getAllPermissions
 GET {{baseUrl}}/api/roles/permissions
 Authorization: Bearer {{adminToken}}
 
 
-### 2.2 Lấy danh sách các vai trò động của đơn vị hiện tại
+### 2.3 Lấy danh sách các vai trò động của đơn vị hiện tại
 # @name getTenantRoles
 GET {{baseUrl}}/api/roles
 Authorization: Bearer {{adminToken}}
 
 
-### 2.3 [Admin Đơn vị] Tự tạo vai trò động mới trên UI: "NhanVienKeToan" (Chỉ cho phép Xem và Lập đơn)
+### 2.4 [Admin Đơn vị] Tự tạo vai trò động mới trên UI: "SalesAssociate" (Chỉ cho phép Xem và Lập đơn)
 # @name createCustomRole
 POST {{baseUrl}}/api/roles
 Authorization: Bearer {{adminToken}}
 Content-Type: {{contentType}}
 
 {
-  "name": "NhanVienKeToan",
-  "description": "Vai trò kế toán viên chỉ xem và tạo hóa đơn",
+  "name": "SalesAssociate",
+  "description": "Sales associate role with clean English permission keys",
   "permissions": [
-    "Orders.Read",
-    "Orders.Create"
+    "Orders:Read",
+    "Orders:Create"
   ]
 }
 
@@ -102,27 +107,27 @@ Content-Type: {{contentType}}
 @customRoleId = {{createCustomRole.response.body.data.id}}
 
 
-### 2.4 [Admin Đơn vị] Gán vai trò "NhanVienKeToan" cho nhân sự mới "david_accountant"
+### 2.5 [Admin Đơn vị] Gán vai trò "SalesAssociate" cho nhân sự mới "david_sales"
 # @name assignUserRole
 POST {{baseUrl}}/api/roles/assign
 Authorization: Bearer {{adminToken}}
 Content-Type: {{contentType}}
 
 {
-  "userId": "david_accountant",
+  "userId": "david_sales",
   "roleIds": [
     "{{customRoleId}}"
   ]
 }
 
 
-### 2.5 Nhân sự "david_accountant" đăng nhập vào đơn vị (Nhận quyền động từ DB)
+### 2.6 Nhân sự "david_sales" đăng nhập vào đơn vị (Nhận quyền động từ DB)
 # @name loginDavid
 POST {{baseUrl}}/api/auth/token
 Content-Type: {{contentType}}
 
 {
-  "username": "david_accountant",
+  "username": "david_sales",
   "tenantId": "default-tenant"
 }
 
@@ -134,20 +139,20 @@ Content-Type: {{contentType}}
 # 3. KIỂM TRA PHÂN QUYỀN ĐỘNG & BẢO MẬT API
 ###############################################################################
 
-### 3.1 David tạo đơn hàng mới với Idempotency-Key (HỢP LỆ vì có Orders.Create)
+### 3.1 David tạo đơn hàng mới với Idempotency-Key (HỢP LỆ vì có Orders:Create)
 # @name davidCreateOrder
 POST {{baseUrl}}/api/orders/create
 Authorization: Bearer {{davidToken}}
-Idempotency-Key: david-idem-001
+Idempotency-Key: david-idem-002
 Content-Type: {{contentType}}
 
 {
-  "customerName": "Công ty TNHH Giải Pháp Số",
-  "customerEmail": "contact@digital.vn",
+  "customerName": "Clean i18n Enterprise Client",
+  "customerEmail": "contact@clean-i18n.vn",
   "items": [
     {
-      "productName": "Gói phần mềm ERP Enterprise",
-      "sku": "SKU-ERP-01",
+      "productName": "Enterprise Distributed Suite",
+      "sku": "SKU-DIST-01",
       "quantity": 1,
       "unitPrice": 1200.00
     }
@@ -158,25 +163,25 @@ Content-Type: {{contentType}}
 @davidOrderId = {{davidCreateOrder.response.body.data.id}}
 
 
-### 3.2 David thử gửi lệnh HỦY ĐƠN HÀNG -> Kết quả: 403 Forbidden (Do NhanVienKeToan không có Orders.Cancel)
+### 3.2 David thử gửi lệnh HỦY ĐƠN HÀNG -> Kết quả: 403 Forbidden (Do SalesAssociate không có Orders:Cancel)
 # @name davidCancelBlocked
 DELETE {{baseUrl}}/api/orders/{{davidOrderId}}/cancel
 Authorization: Bearer {{davidToken}}
 
 
-### 3.3 [Admin Đơn vị] Nâng cấp quyền: Tùy biến sửa vai trò "NhanVienKeToan" BỔ SUNG thêm quyền "Orders.Cancel"
+### 3.3 [Admin Đơn vị] Nâng cấp quyền: Tùy biến sửa vai trò "SalesAssociate" BỔ SUNG thêm quyền "Orders:Cancel"
 # @name updateRoleGrantCancel
 PUT {{baseUrl}}/api/roles/{{customRoleId}}
 Authorization: Bearer {{adminToken}}
 Content-Type: {{contentType}}
 
 {
-  "name": "NhanVienKeToan",
-  "description": "Kế toán viên được phân quyền hủy đơn trực tiếp",
+  "name": "SalesAssociate",
+  "description": "Sales associate role upgraded with cancel permission",
   "permissions": [
-    "Orders.Read",
-    "Orders.Create",
-    "Orders.Cancel"
+    "Orders:Read",
+    "Orders:Create",
+    "Orders:Cancel"
   ]
 }
 
@@ -203,13 +208,13 @@ GET {{baseUrl}}/api/orders/{{davidOrderId}}
 Authorization: Bearer {{tenantBToken}}
 
 
-### 4.2 Lấy danh sách Audit Logs (Yêu cầu quyền AuditLogs.Read)
+### 4.2 Lấy danh sách Audit Logs (Yêu cầu quyền AuditLogs:Read)
 # @name getAuditLogs
 GET {{baseUrl}}/api/auditlogs/list?pageIndex=1&pageSize=10
 Authorization: Bearer {{adminToken}}
 
 
-### 4.3 Xem thống kê tổng hợp đơn hàng (Yêu cầu quyền Orders.Read)
+### 4.3 Xem thống kê tổng hợp đơn hàng (Yêu cầu quyền Orders:Read)
 # @name getStatistics
 GET {{baseUrl}}/api/orders/statistics/summary
 Authorization: Bearer {{adminToken}}

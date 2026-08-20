@@ -4,7 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 using WolverineApp.Application.Common.Interfaces;
 using WolverineApp.Application.Common.Models;
 using WolverineApp.Application.DTOs.Auth;
-using WolverineApp.Domain.Identity;
+using WolverineApp.Infrastructure.Auth;
 
 namespace WolverineApp.Controllers;
 
@@ -39,7 +39,7 @@ public class AuthController : ControllerBase
                 request.Username,
                 "system",
                 isRoot: true,
-                new[] { SystemPermissions.SystemRoot }
+                new[] { PermissionDiscoveryService.RootPermissionCode }
             );
             return Ok(ApiResponse<TokenResponse>.Ok(rootResponse, "Đăng nhập Root User hệ thống thành công."));
         }

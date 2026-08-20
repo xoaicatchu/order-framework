@@ -8,9 +8,10 @@ using WolverineApp.Domain.Identity;
 
 namespace WolverineApp.Controllers;
 
-[Authorize(Policy = SystemPermissions.AuditLogsRead)]
+[Authorize]
 [ApiController]
 [Route("api/[controller]")]
+[PermissionResource("AuditLogs", "Audit")]
 public class AuditLogsController : ControllerBase
 {
     private readonly IMessageBus _bus;
@@ -21,9 +22,10 @@ public class AuditLogsController : ControllerBase
     }
 
     /// <summary>
-    /// [Query] Lấy danh sách lịch sử Audit Logs có phân trang
+    /// [Query] Lấy danh sách lịch sử Audit Logs có phân trang (Quyền: AuditLogs:Read)
     /// </summary>
     [HttpGet("list")]
+    [HasPermission("AuditLogs", "Read")]
     public async Task<IActionResult> GetAuditLogs(
         [FromQuery] int pageIndex = 1,
         [FromQuery] int pageSize = 10)

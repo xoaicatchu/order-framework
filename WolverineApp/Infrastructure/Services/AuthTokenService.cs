@@ -5,12 +5,12 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.IdentityModel.Tokens;
 using WolverineApp.Application.Common.Interfaces;
 using WolverineApp.Application.DTOs.Auth;
-using WolverineApp.Domain.Identity;
 
 namespace WolverineApp.Infrastructure.Services;
 
 public class AuthTokenService : IAuthTokenService
 {
+    public const string RootPermissionCode = "System:Root";
     private readonly IConfiguration _configuration;
 
     public AuthTokenService(IConfiguration configuration)
@@ -43,10 +43,10 @@ public class AuthTokenService : IAuthTokenService
         {
             claims.Add(new Claim("is_root", "true"));
             claims.Add(new Claim(ClaimTypes.Role, "SystemAdmin"));
-            claims.Add(new Claim("permission", SystemPermissions.SystemRoot));
-            if (!permissionList.Contains(SystemPermissions.SystemRoot))
+            claims.Add(new Claim("permission", RootPermissionCode));
+            if (!permissionList.Contains(RootPermissionCode))
             {
-                permissionList.Add(SystemPermissions.SystemRoot);
+                permissionList.Add(RootPermissionCode);
             }
         }
 

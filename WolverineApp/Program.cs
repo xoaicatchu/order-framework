@@ -69,19 +69,11 @@ builder.Services.AddAuthentication(options =>
     };
 });
 
-// 4. Security & IAM: Dynamic RBAC Policy-Based Authorization
+// 4. Security & IAM: 100% Zero-Declaration Dynamic RBAC (Auto-Discovery & Dynamic Policy Provider)
 builder.Services.AddScoped<IPermissionService, PermissionService>();
 builder.Services.AddSingleton<IAuthorizationHandler, PermissionAuthorizationHandler>();
-
-builder.Services.AddAuthorization(options =>
-{
-    // Đăng ký toàn bộ chính sách phân quyền động từ SystemPermissions
-    foreach (var perm in SystemPermissions.All)
-    {
-        options.AddPolicy(perm.Code, policy =>
-            policy.Requirements.Add(new PermissionRequirement(perm.Code)));
-    }
-});
+builder.Services.AddSingleton<IAuthorizationPolicyProvider, DynamicPermissionPolicyProvider>();
+builder.Services.AddAuthorization();
 
 builder.Services.AddSingleton<IAuthTokenService, AuthTokenService>();
 

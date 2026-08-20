@@ -1,13 +1,13 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using WolverineApp.Application.Common.Interfaces;
-using WolverineApp.Domain.Identity;
 using WolverineApp.Infrastructure.Data;
 
 namespace WolverineApp.Infrastructure.Services;
 
 public class PermissionService : IPermissionService
 {
+    public const string RootPermissionCode = "System:Root";
     private readonly ApplicationDbContext _dbContext;
     private readonly ICacheService _cacheService;
     private readonly ILogger<PermissionService> _logger;
@@ -57,7 +57,7 @@ public class PermissionService : IPermissionService
         var userPermissions = await GetUserPermissionsAsync(userId, tenantId, cancellationToken);
 
         // Nếu có quyền Root (Quản trị tối cao toàn hệ thống) thì cho phép toàn bộ
-        if (userPermissions.Contains(SystemPermissions.SystemRoot, StringComparer.OrdinalIgnoreCase))
+        if (userPermissions.Contains(RootPermissionCode, StringComparer.OrdinalIgnoreCase))
         {
             return true;
         }

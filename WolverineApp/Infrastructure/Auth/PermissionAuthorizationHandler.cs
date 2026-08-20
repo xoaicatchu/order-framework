@@ -2,12 +2,12 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.DependencyInjection;
 using WolverineApp.Application.Common.Interfaces;
-using WolverineApp.Domain.Identity;
 
 namespace WolverineApp.Infrastructure.Auth;
 
 public class PermissionAuthorizationHandler : AuthorizationHandler<PermissionRequirement>
 {
+    public const string RootPermissionCode = "System:Root";
     private readonly IServiceProvider _serviceProvider;
 
     public PermissionAuthorizationHandler(IServiceProvider serviceProvider)
@@ -32,9 +32,9 @@ public class PermissionAuthorizationHandler : AuthorizationHandler<PermissionReq
             return;
         }
 
-        // 2. Kiểm tra nếu Token đã mang sẵn quyền này hoặc quyền System.Root
+        // 2. Kiểm tra nếu Token đã mang sẵn quyền này hoặc quyền System:Root
         var tokenPermissions = context.User.FindAll("permission").Select(c => c.Value);
-        if (tokenPermissions.Contains(SystemPermissions.SystemRoot, StringComparer.OrdinalIgnoreCase) ||
+        if (tokenPermissions.Contains(RootPermissionCode, StringComparer.OrdinalIgnoreCase) ||
             tokenPermissions.Contains(requirement.Permission, StringComparer.OrdinalIgnoreCase))
         {
             context.Succeed(requirement);

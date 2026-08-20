@@ -31,6 +31,7 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
     public DbSet<ProcessedMessage> ProcessedMessages => Set<ProcessedMessage>();
 
     // Dynamic RBAC Entities
+    public DbSet<AppPermission> Permissions => Set<AppPermission>();
     public DbSet<AppRole> Roles => Set<AppRole>();
     public DbSet<AppRolePermission> RolePermissions => Set<AppRolePermission>();
     public DbSet<AppUserRole> UserRoles => Set<AppUserRole>();
@@ -105,6 +106,17 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
             entity.HasKey(e => e.Id);
             entity.Property(e => e.ConsumerName).IsRequired().HasMaxLength(255);
             entity.HasIndex(e => new { e.MessageId, e.ConsumerName }).IsUnique();
+        });
+
+        // Cấu hình bảng AppPermission (Danh mục quyền hạn động hệ thống)
+        modelBuilder.Entity<AppPermission>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Code).IsRequired().HasMaxLength(100);
+            entity.Property(e => e.Module).IsRequired().HasMaxLength(100);
+            entity.Property(e => e.Resource).IsRequired().HasMaxLength(100);
+            entity.Property(e => e.Action).IsRequired().HasMaxLength(100);
+            entity.HasIndex(e => e.Code).IsUnique();
         });
 
         // Cấu hình bảng Role, RolePermission, UserRole
