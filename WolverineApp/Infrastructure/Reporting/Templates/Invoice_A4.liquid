@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <title>Hóa Đơn Bán Hàng #{{ OrderNumber }}</title>
+    <style>
+        @page {
+            size: A4 portrait;
+            margin: 15mm;
+        }
+        body {
+            font-family: 'Segoe UI', Arial, sans-serif;
+            font-size: 13px;
+            color: #333;
+            line-height: 1.4;
+            margin: 0;
+            padding: 0;
+        }
+        .header-table {
+            width: 100%;
+            border-bottom: 2px solid #0056b3;
+            padding-bottom: 10px;
+            margin-bottom: 15px;
+        }
+        .org-title {
+            font-size: 16px;
+            font-weight: bold;
+            color: #0056b3;
+            text-transform: uppercase;
+        }
+        .org-info {
+            font-size: 11px;
+            color: #666;
+        }
+        .doc-title {
+            text-align: center;
+            font-size: 20px;
+            font-weight: bold;
+            color: #d9534f;
+            margin: 10px 0 5px 0;
+            text-transform: uppercase;
+        }
+        .doc-subtitle {
+            text-align: center;
+            font-size: 11px;
+            font-style: italic;
+            color: #777;
+            margin-bottom: 15px;
+        }
+        .info-box {
+            width: 100%;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 10px;
+            margin-bottom: 15px;
+            background-color: #f9f9f9;
+        }
+        .info-table {
+            width: 100%;
+        }
+        .info-table td {
+            padding: 3px 5px;
+        }
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 15px;
+        }
+        .data-table th {
+            background-color: #f2f2f2;
+            border: 1px solid #ccc;
+            padding: 8px;
+            font-weight: bold;
+            font-size: 12px;
+            text-align: center;
+        }
+        .data-table td {
+            border: 1px solid #ccc;
+            padding: 8px;
+            font-size: 12px;
+        }
+        .text-center { text-align: center; }
+        .text-right { text-align: right; }
+        .text-bold { font-weight: bold; }
+        .total-box {
+            text-align: right;
+            margin-bottom: 10px;
+        }
+        .total-amount {
+            font-size: 16px;
+            font-weight: bold;
+            color: #d9534f;
+        }
+        .words-box {
+            font-style: italic;
+            margin-bottom: 25px;
+            padding: 8px;
+            background-color: #eef6fc;
+            border-left: 4px solid #0056b3;
+        }
+        .signatures {
+            width: 100%;
+            margin-top: 30px;
+        }
+        .signatures td {
+            text-align: center;
+            vertical-align: top;
+            width: 33.33%;
+        }
+        .sig-title {
+            font-weight: bold;
+            font-size: 12px;
+            text-transform: uppercase;
+        }
+        .sig-desc {
+            font-size: 11px;
+            font-style: italic;
+            color: #777;
+        }
+        .sig-space {
+            height: 60px;
+        }
+        .footer {
+            margin-top: 30px;
+            border-top: 1px solid #ddd;
+            padding-top: 5px;
+            font-size: 10px;
+            color: #888;
+            display: flex;
+            justify-content: space-between;
+        }
+        tr {
+            page-break-inside: avoid;
+        }
+    </style>
+</head>
+<body>
+
+    <table class="header-table">
+        <tr>
+            <td style="width: 75%;">
+                <div class="org-title">Hệ Thống Quản Lý Doanh Nghiệp Phân Tán (EDAP)</div>
+                <div class="org-info">Đơn vị triển khai: <strong>{{ TenantId }}</strong></div>
+                <div class="org-info">Địa chỉ: Tầng 8, Tòa nhà Công nghệ cao, TP. Hà Nội</div>
+                <div class="org-info">Hotline: 1900-6868 | Email: support@enterprise-platform.vn</div>
+            </td>
+            <td style="width: 25%; text-align: right;">
+                <img src="{{ OrderNumber | qr_code }}" alt="QR Code" style="width: 75px; height: 75px;" />
+            </td>
+        </tr>
+    </table>
+
+    <div class="doc-title">Hóa Đơn Bán Hàng & Phiếu Xuất Kho</div>
+    <div class="doc-subtitle">(Mã chứng từ: #{{ OrderNumber }} - Ngày tạo: {{ CreatedAt | format_date: 'dd/MM/yyyy HH:mm' }})</div>
+
+    <div class="info-box">
+        <table class="info-table">
+            <tr>
+                <td style="width: 20%;"><strong>Khách hàng:</strong></td>
+                <td style="width: 35%;">{{ CustomerName }}</td>
+                <td style="width: 20%;"><strong>Trạng thái đơn:</strong></td>
+                <td style="width: 25%;"><span class="text-bold" style="color: #0056b3;">{{ Status }}</span></td>
+            </tr>
+            <tr>
+                <td><strong>Email liên hệ:</strong></td>
+                <td>{{ CustomerEmail }}</td>
+                <td><strong>Hình thức TT:</strong></td>
+                <td>Chuyển khoản / Tiền mặt</td>
+            </tr>
+        </table>
+    </div>
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th style="width: 5%;">STT</th>
+                <th style="width: 45%;">Tên Sản Phẩm / Dịch Vụ</th>
+                <th style="width: 15%;">Mã SKU</th>
+                <th style="width: 10%;">SL</th>
+                <th style="width: 12%;">Đơn Giá</th>
+                <th style="width: 13%;">Thành Tiền</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in Items %}
+            <tr>
+                <td class="text-center">{{ forloop.index }}</td>
+                <td><strong>{{ item.ProductName }}</strong></td>
+                <td class="text-center">{{ item.Sku }}</td>
+                <td class="text-center">{{ item.Quantity }}</td>
+                <td class="text-right">{{ item.UnitPrice | format_currency: 'USD' }}</td>
+                <td class="text-right text-bold">{{ item.TotalPrice | format_currency: 'USD' }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <div class="total-box">
+        <span>Tổng cộng tiền thanh toán: </span>
+        <span class="total-amount">{{ TotalAmount | format_currency: 'USD' }}</span>
+    </div>
+
+    <div class="words-box">
+        <strong>Số tiền bằng chữ: </strong>
+        <span>{{ TotalAmount | to_vietnamese_words: 'đô la Mỹ' }}</span>
+    </div>
+
+    <table class="signatures">
+        <tr>
+            <td>
+                <div class="sig-title">Người Lập Phiếu</div>
+                <div class="sig-desc">(Ký, ghi rõ họ tên)</div>
+                <div class="sig-space"></div>
+                <div><strong>{{ CreatedBy }}</strong></div>
+            </td>
+            <td>
+                <div class="sig-title">Thủ Kho Xuất</div>
+                <div class="sig-desc">(Ký, ghi rõ họ tên)</div>
+                <div class="sig-space"></div>
+                <div>................................</div>
+            </td>
+            <td>
+                <div class="sig-title">Khách Hàng Nhận</div>
+                <div class="sig-desc">(Ký, ghi rõ họ tên)</div>
+                <div class="sig-space"></div>
+                <div><strong>{{ CustomerName }}</strong></div>
+            </td>
+        </tr>
+    </table>
+
+    <div class="footer">
+        <div>Chứng từ điện tử trích xuất từ hệ thống EDAP Core Engine</div>
+        <div>In ngày: {{ 'now' | format_date: 'dd/MM/yyyy HH:mm' }}</div>
+    </div>
+
+</body>
+</html>

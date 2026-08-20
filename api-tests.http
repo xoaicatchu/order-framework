@@ -218,3 +218,63 @@ Authorization: Bearer {{adminToken}}
 # @name getStatistics
 GET {{baseUrl}}/api/orders/statistics/summary
 Authorization: Bearer {{adminToken}}
+
+
+###############################################################################
+# 5. TEMPLATE-DRIVEN REPORTING & DOCUMENT RENDERING ENGINE
+###############################################################################
+
+### 5.1 Lấy danh mục các mẫu in (Templates) có sẵn của đơn vị
+# @name getTemplates
+GET {{baseUrl}}/api/reports/templates
+Authorization: Bearer {{adminToken}}
+
+
+### 5.2 In Hóa đơn đơn hàng ra định dạng PDF vector chuẩn in ấn A4 (QuestPDF Engine)
+# @name printOrderPdf
+GET {{baseUrl}}/api/reports/orders/{{davidOrderId}}/print?format=Pdf
+Authorization: Bearer {{adminToken}}
+
+
+### 5.3 Xem trước bản in Hóa đơn trên Web (HTML Preview với QR Code & Tiền bằng chữ)
+# @name printOrderHtml
+GET {{baseUrl}}/api/reports/orders/{{davidOrderId}}/print?format=Html
+Authorization: Bearer {{adminToken}}
+
+
+### 5.4 Render báo cáo theo Payload động bất kỳ ra file PDF (POST /api/reports/render)
+# @name renderCustomReport
+POST {{baseUrl}}/api/reports/render
+Authorization: Bearer {{adminToken}}
+Content-Type: {{contentType}}
+
+{
+  "templateCode": "Invoice_A4",
+  "dataModel": {
+    "OrderNumber": "ORD-DOC-8888",
+    "TenantId": "Enterprise-Hospital",
+    "CustomerName": "Bệnh Viện Đa Khoa Quốc Tế",
+    "CustomerEmail": "contact@bvquocte.vn",
+    "Status": "Completed",
+    "CreatedAt": "2026-08-20T10:00:00Z",
+    "CreatedBy": "Bác sĩ trưởng khoa",
+    "TotalAmount": 55000.0,
+    "Items": [
+      {
+        "ProductName": "Hệ thống Phân tích Xét nghiệm Tự động",
+        "Sku": "MED-AUTO-01",
+        "Quantity": 1,
+        "UnitPrice": 45000.0,
+        "Total": 45000.0
+      },
+      {
+        "ProductName": "Bộ Hóa chất Xét nghiệm Sinh hóa",
+        "Sku": "MED-CHEM-02",
+        "Quantity": 10,
+        "UnitPrice": 1000.0,
+        "Total": 10000.0
+      }
+    ]
+  },
+  "format": 0
+}

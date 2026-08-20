@@ -23,6 +23,10 @@ using WolverineApp.Infrastructure.Data.Repositories;
 using WolverineApp.Infrastructure.Health;
 using WolverineApp.Infrastructure.Middleware;
 using WolverineApp.Infrastructure.Services;
+using WolverineApp.Application.Common.Reporting;
+using WolverineApp.Infrastructure.Reporting;
+using WolverineApp.Infrastructure.Reporting.TemplateStores;
+using WolverineApp.Infrastructure.Reporting.Renderers;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -158,6 +162,12 @@ if (!string.IsNullOrWhiteSpace(redisConnectionString))
 
 builder.Services.AddSingleton<ICacheService, HybridCacheService>();
 builder.Services.AddHostedService<OutboxBackgroundProcessor>();
+
+// Enterprise Template-Driven Reporting & Document Rendering Engine
+builder.Services.AddSingleton<IReportTemplateStore, WolverineApp.Infrastructure.Reporting.TemplateStores.FileSystemReportTemplateStore>();
+builder.Services.AddSingleton<WolverineApp.Application.Common.Reporting.IDocumentRenderer, WolverineApp.Infrastructure.Reporting.Renderers.QuestPdfDocumentRenderer>();
+builder.Services.AddSingleton<WolverineApp.Application.Common.Reporting.IDocumentRenderer, WolverineApp.Infrastructure.Reporting.Renderers.HtmlDocumentRenderer>();
+builder.Services.AddScoped<WolverineApp.Application.Common.Reporting.IReportEngine, WolverineApp.Infrastructure.Reporting.LiquidReportEngine>();
 
 builder.Services.AddHealthChecks()
     .AddDbContextCheck<ApplicationDbContext>(name: "database", tags: ["ready"])

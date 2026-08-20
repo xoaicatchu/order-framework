@@ -41,7 +41,9 @@ public static class DbInitializer
                 "Roles:Update",
                 "Roles:Delete",
                 "Roles:Assign",
-                "AuditLogs:Read"
+                "AuditLogs:Read",
+                "Reports:Read",
+                "Reports:Export"
             ]);
             await context.Roles.AddAsync(adminDonViRole);
 
@@ -95,7 +97,9 @@ public static class DbInitializer
                 "Roles:Update",
                 "Roles:Delete",
                 "Roles:Assign",
-                "AuditLogs:Read"
+                "AuditLogs:Read",
+                "Reports:Read",
+                "Reports:Export"
             ]);
             await context.Roles.AddAsync(tenantBAdminRole);
 
