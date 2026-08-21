@@ -171,12 +171,9 @@ builder.Services.AddSwaggerGen(c =>
     };
 
     c.AddSecurityDefinition("Bearer", securityScheme);
-    c.AddSecurityRequirement(_ => new OpenApiSecurityRequirement
+    c.AddSecurityRequirement(document => new OpenApiSecurityRequirement
     {
-        {
-            new OpenApiSecuritySchemeReference("Bearer"),
-            new List<string>()
-        }
+        [new OpenApiSecuritySchemeReference("Bearer", document)] = []
     });
 });
 
@@ -318,9 +315,8 @@ if (!isCodegenCommand)
 
 app.UseForwardedHeaders();
 app.UseOrderServiceDefaults();
-app.UseMiddleware<CorrelationIdMiddleware>();
-app.UseRateLimiter();
 app.UseCors("ConfiguredFrontend");
+app.UseRateLimiter();
 
 app.UseSerilogRequestLogging(opts =>
 {
@@ -356,6 +352,7 @@ if (builder.Configuration.GetValue("HttpsRedirection:Enabled", false))
 }
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseMiddleware<CorrelationIdMiddleware>();
 app.UseMiddleware<IdempotencyKeyMiddleware>();
 
 app.MapHealthChecks("/health/live", new HealthCheckOptions
