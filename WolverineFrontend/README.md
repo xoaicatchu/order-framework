@@ -24,14 +24,13 @@ To use live data, open **API connection**, enter the Wolverine API base URL and 
 
 ## API calls
 
-When connected, the app uses:
+When connected, the app uses the simplified report flow:
 
-- `GET /api/reports/semantic-datasets`
-- `POST /api/reports/configurations`
-- `POST /api/reports/templates/validate`
-- `POST /api/reports/configurations/{code}/execute`
+- `GET /api/reports/catalog`
+- `POST /api/reports`
+- `POST /api/reports/{code}/export`
 
-The API base URL defaults to `http://localhost:5000`. For endpoint payloads and authorization requirements, see [`../docs/integration/api-integration-guide.md`](../docs/integration/api-integration-guide.md).
+The API base URL defaults to `http://localhost:5000`. For endpoint payloads and authorization requirements, see [`../docs/reporting/reporting-guide.md`](../docs/reporting/reporting-guide.md).
 
 ## Production build
 

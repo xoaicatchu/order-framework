@@ -310,24 +310,15 @@ GET /api/auditlogs/list?pageIndex=1&pageSize=20
 
 ## Reports API
 
-Luồng tích hợp chi tiết, input dataset, template và file output nằm ở [Reporting guide](../reporting/reporting-guide.md). Các endpoint chính:
+Luồng tích hợp đơn giản nằm ở [Reporting guide](../reporting/reporting-guide.md). Client mới chỉ cần ba endpoint:
 
 ```http
-GET  /api/reports/semantic-datasets
-GET  /api/reports/semantic-datasets/{code}
-GET  /api/reports/configurations
-POST /api/reports/configurations
-GET  /api/reports/configurations/{code}/form-schema
-POST /api/reports/configurations/{code}/execute
-GET  /api/reports/templates
-GET  /api/reports/templates/{code}
-POST /api/reports/templates
-POST /api/reports/templates/validate
-POST /api/reports/render
-GET  /api/reports/orders/{orderId}/print?format=Pdf
+GET  /api/reports/catalog
+POST /api/reports
+POST /api/reports/{code}/export
 ```
 
-Render thành công trả file binary. Renderer hiện có PDF và HTML; Excel/CSV chưa được triển khai dù enum đã có giá trị tương ứng.
+`catalog` trả nguồn dữ liệu và allowlist cột. `POST /api/reports` tạo báo cáo mà không cần tự đặt code hoặc viết Liquid. `export` nhận `format: pdf|html` và object `filters`, sau đó trả file binary. Các endpoint configuration/template/raw render cũ vẫn được giữ để tương thích, nhưng không phải luồng tích hợp khuyến nghị.
 
 ## Retry strategy cho đối tác
 

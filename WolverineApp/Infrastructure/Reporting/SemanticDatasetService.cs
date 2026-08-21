@@ -108,32 +108,40 @@ public class SemanticDatasetService : ISemanticDatasetService
         // Force @TenantId
         AddParameter(command, "@TenantId", tenantId);
 
-        // Map Filter Criteria to Parameterized WHERE Clauses
+        // Map friendly filter criteria to parameterized WHERE clauses.
+        // Examples: { "CreatedAt": { "from": "2026-08-01", "to": "2026-08-31" } }
+        // becomes CreatedAt_from / CreatedAt_to after the public API normalizes it.
         foreach (var (key, value) in filterCriteria)
         {
             if (value is null || string.IsNullOrWhiteSpace(value.ToString())) continue;
 
-            if (key.Equals("FromDate", StringComparison.OrdinalIgnoreCase) && DateTime.TryParse(value.ToString(), out var fromDate))
+            var normalizedKey = key.Replace('.', '_');
+            var isFrom = normalizedKey.EndsWith("_from", StringComparison.OrdinalIgnoreCase);
+            var isTo = normalizedKey.EndsWith("_to", StringComparison.OrdinalIgnoreCase);
+            var fieldName = isFrom || isTo
+                ? normalizedKey[..normalizedKey.LastIndexOf('_')]
+                : normalizedKey;
+
+            // Backward-compatible aliases used by older integrations.
+            if (key.Equals("FromDate", StringComparison.OrdinalIgnoreCase)
+                || key.Equals("ToDate", StringComparison.OrdinalIgnoreCase))
             {
-                queryBuilder.AppendLine($"  AND {QuoteIdentifier("CreatedAt")} >= @Param_FromDate");
-                AddParameter(command, "@Param_FromDate", fromDate.Date);
+                fieldName = "CreatedAt";
+                isFrom = key.Equals("FromDate", StringComparison.OrdinalIgnoreCase);
+                isTo = !isFrom;
             }
-            else if (key.Equals("ToDate", StringComparison.OrdinalIgnoreCase) && DateTime.TryParse(value.ToString(), out var toDate))
+
+            if (fieldDict.TryGetValue(fieldName, out var fieldDef) && fieldDef.Filterable)
             {
-                queryBuilder.AppendLine($"  AND {QuoteIdentifier("CreatedAt")} <= @Param_ToDate");
-                AddParameter(command, "@Param_ToDate", toDate.Date.AddDays(1).AddTicks(-1));
-            }
-            else if (key.Equals("Status", StringComparison.OrdinalIgnoreCase))
-            {
-                var statusStr = value.ToString();
-                if (!string.Equals(statusStr, "ALL", StringComparison.OrdinalIgnoreCase))
+                if ((isFrom || isTo) && fieldDef.Type == "date"
+                    && DateTime.TryParse(value.ToString(), out var dateValue))
                 {
-                    queryBuilder.AppendLine("  AND Status = @Param_Status");
-                    AddParameter(command, "@Param_Status", statusStr);
+                    var parameterName = $"@Param_{fieldDef.Key}_{(isFrom ? "From" : "To")}";
+                    queryBuilder.AppendLine($"  AND {QuoteIdentifier(fieldDef.Key)} {(isFrom ? ">=" : "<=" )} {parameterName}");
+                    AddParameter(command, parameterName, isFrom ? dateValue.Date : dateValue.Date.AddDays(1).AddTicks(-1));
+                    continue;
                 }
-            }
-            else if (fieldDict.TryGetValue(key, out var fieldDef) && fieldDef.Filterable)
-            {
+
                 var paramName = $"@Param_{fieldDef.Key}";
                 if (fieldDef.Type == "string")
                 {

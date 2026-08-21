@@ -29,6 +29,49 @@ public record ExecuteReportConfigRequest(
     ReportOutputFormat Format = ReportOutputFormat.Html
 );
 
+// Public report contract: consumers should use catalog -> create -> export.
+// The configuration/template terminology remains available for backward compatibility.
+public record ReportCatalogDto(List<ReportDataSourceDto> DataSources);
+
+public record ReportDataSourceDto(
+    string Id,
+    string Name,
+    string Category,
+    string? Description,
+    List<ReportFieldDto> Fields
+);
+
+public record ReportFieldDto(
+    string Id,
+    string Name,
+    string Type,
+    bool CanFilter,
+    List<string>? Options
+);
+
+public record ReportFilterDefinition(
+    string Field,
+    string Type,
+    string? Label = null,
+    bool Required = false,
+    string? DefaultValue = null
+);
+
+public record CreateReportRequest(
+    string Name,
+    string DataSourceId,
+    List<string>? Columns = null,
+    List<ReportFilterDefinition>? Filters = null,
+    string? Code = null
+);
+
+public record ReportCreatedDto(string Code, string Name, string DataSourceId);
+
+public record ExportReportRequest(
+    string Format = "pdf",
+    Dictionary<string, JsonElement>? Filters = null
+);
+
 [Authorize]
 [ApiController]
 [Route("api/[controller]")]
@@ -56,6 +99,113 @@ public class ReportsController : ControllerBase
         _unitOfWork = unitOfWork;
         _bus = bus;
         _tenantProvider = tenantProvider;
+    }
+
+    // ==========================================
+    // 0. SIMPLE PUBLIC CONTRACT
+    // ==========================================
+
+    [HttpGet("catalog")]
+    [HasPermission("Reports", "Read")]
+    public async Task<IActionResult> GetReportCatalog(CancellationToken cancellationToken)
+    {
+        var datasets = await _semanticService.GetAvailableDatasetsAsync(cancellationToken);
+        var dataSources = datasets.Select(dataset => new ReportDataSourceDto(
+            Id: dataset.Code,
+            Name: dataset.Name,
+            Category: dataset.Category,
+            Description: dataset.Description,
+            Fields: dataset.Fields.Select(field => new ReportFieldDto(
+                Id: field.Key,
+                Name: field.Label,
+                Type: field.Type,
+                CanFilter: field.Filterable,
+                Options: field.EnumValues)).ToList())).ToList();
+
+        return Ok(ApiResponse<ReportCatalogDto>.Ok(new ReportCatalogDto(dataSources)));
+    }
+
+    [HttpPost]
+    [HasPermission("Reports", "Export")]
+    public async Task<IActionResult> CreateReport([FromBody] CreateReportRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.Name) || string.IsNullOrWhiteSpace(request.DataSourceId))
+        {
+            return BadRequest(ApiResponse<ReportCreatedDto>.Fail("Tên báo cáo và nguồn dữ liệu là bắt buộc."));
+        }
+
+        var code = string.IsNullOrWhiteSpace(request.Code)
+            ? $"report-{Guid.NewGuid():N}"
+            : request.Code.Trim();
+
+        var filters = (request.Filters ?? [])
+            .Select(filter => new ReportFilterConfigItem
+            {
+                FieldName = filter.Field,
+                Label = filter.Label ?? filter.Field,
+                FilterType = filter.Type,
+                Required = filter.Required,
+                DefaultValue = filter.DefaultValue
+            })
+            .ToList();
+
+        var result = await SaveReportConfiguration(new SaveReportConfigurationRequest(
+            Code: code,
+            Name: request.Name.Trim(),
+            DatasetCode: request.DataSourceId,
+            SelectedFields: request.Columns ?? [],
+            Filters: filters));
+
+        if (result is not OkObjectResult)
+        {
+            return result;
+        }
+
+        return Ok(ApiResponse<ReportCreatedDto>.Created(
+            new ReportCreatedDto(code, request.Name.Trim(), request.DataSourceId),
+            "Đã tạo báo cáo."));
+    }
+
+    [HttpPost("{code}/export")]
+    [HasPermission("Reports", "Export")]
+    public async Task<IActionResult> ExportReport(string code, [FromBody] ExportReportRequest request)
+    {
+        if (!Enum.TryParse<ReportOutputFormat>(request.Format, ignoreCase: true, out var format)
+            || format is ReportOutputFormat.Excel or ReportOutputFormat.Csv)
+        {
+            return BadRequest(ApiResponse<string>.Fail("Định dạng hỗ trợ hiện tại chỉ gồm pdf và html."));
+        }
+
+        var criteria = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (field, value) in request.Filters ?? [])
+        {
+            if (value.ValueKind == JsonValueKind.Object)
+            {
+                foreach (var property in value.EnumerateObject())
+                {
+                    criteria[$"{field}_{property.Name}"] = ToObject(property.Value);
+                }
+            }
+            else
+            {
+                criteria[field] = ToObject(value);
+            }
+        }
+
+        return await ExecuteConfiguredReport(code, new ExecuteReportConfigRequest(criteria, format));
+    }
+
+    private static object? ToObject(JsonElement value)
+    {
+        return value.ValueKind switch
+        {
+            JsonValueKind.Null or JsonValueKind.Undefined => null,
+            JsonValueKind.String => value.GetString(),
+            JsonValueKind.Number when value.TryGetInt64(out var integer) => integer,
+            JsonValueKind.Number when value.TryGetDecimal(out var decimalValue) => decimalValue,
+            JsonValueKind.True or JsonValueKind.False => value.GetBoolean(),
+            _ => value.ToString()
+        };
     }
 
     // ==========================================

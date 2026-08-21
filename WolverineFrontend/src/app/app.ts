@@ -1,16 +1,15 @@
-import { TitleCasePipe } from '@angular/common';
 import { Component, inject } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { firstValueFrom } from 'rxjs';
 
 import {
+  CreateReportInput,
   ReportApiService,
-  ReportConfigurationInput,
   ReportFilter,
   SemanticDataset
 } from './core/report-api.service';
 
-type ViewKey = 'overview' | 'builder' | 'templates' | 'datasets';
+type ViewKey = 'overview' | 'builder' | 'datasets';
 type ConnectionState = 'demo' | 'connecting' | 'connected' | 'error';
 
 interface RecentReport {
@@ -24,7 +23,7 @@ interface RecentReport {
 
 @Component({
   selector: 'app-root',
-  imports: [FormsModule, TitleCasePipe],
+  imports: [FormsModule],
   templateUrl: './app.html',
   styleUrl: './app.scss'
 })
@@ -43,22 +42,15 @@ export class App {
   datasets: SemanticDataset[] = this.demoDatasets();
   selectedDatasetCode = 'orders';
   selectedFields = ['orderNumber', 'customerName', 'totalAmount'];
-  reportCode = 'monthly-orders';
-  reportName = 'Monthly orders';
-  reportDescription = 'Order activity and revenue overview';
+  reportCode = 'report-demo';
+  reportName = 'Báo cáo đơn hàng tháng';
+  reportDescription = 'Tổng hợp đơn hàng và doanh thu theo khoảng thời gian.';
   outputFormat: 'Pdf' | 'Html' = 'Pdf';
-  templateContent = `<section class="report">
-  <h1>{{ ReportName }}</h1>
-  <p>Generated at {{ ExecutedAt }}</p>
-  {% for row in Data %}
-    <div>{{ row.orderNumber }} · {{ row.customerName }} · {{ row.totalAmount | format_currency: 'VND' }}</div>
-  {% endfor %}
-</section>`;
 
   filters: ReportFilter[] = [
     {
       fieldName: 'createdAt',
-      label: 'Created date',
+      label: 'Khoảng ngày tạo',
       filterType: 'date_range',
       required: true,
       defaultValue: null
@@ -71,43 +63,24 @@ export class App {
   };
 
   recentReports: RecentReport[] = [
-    { name: 'Monthly orders', dataset: 'Orders', format: 'PDF', status: 'Ready', updated: '12 min ago', accent: 'violet' },
-    { name: 'Revenue by customer', dataset: 'Orders', format: 'HTML', status: 'Draft', updated: 'Yesterday', accent: 'blue' },
-    { name: 'Operations snapshot', dataset: 'Order statistics', format: 'PDF', status: 'Running', updated: 'Yesterday', accent: 'amber' },
-    { name: 'Audit activity', dataset: 'Audit logs', format: 'HTML', status: 'Ready', updated: '3 days ago', accent: 'green' }
+    { name: 'Báo cáo đơn hàng tháng', dataset: 'Đơn hàng', format: 'PDF', status: 'Ready', updated: '12 phút trước', accent: 'violet' },
+    { name: 'Doanh thu theo khách hàng', dataset: 'Đơn hàng', format: 'HTML', status: 'Draft', updated: 'Hôm qua', accent: 'blue' },
+    { name: 'Tổng quan vận hành', dataset: 'Thống kê đơn hàng', format: 'PDF', status: 'Running', updated: 'Hôm qua', accent: 'amber' }
   ];
 
   get selectedDataset(): SemanticDataset {
     return this.datasets.find((dataset) => dataset.code === this.selectedDatasetCode) ?? this.datasets[0] ?? {
-      code: 'empty',
-      name: 'No dataset selected',
-      category: 'Unavailable',
-      description: 'Connect the API to load the semantic catalog.',
-      fields: []
+      code: 'empty', name: 'Chưa có nguồn dữ liệu', category: 'Chưa kết nối',
+      description: 'Kết nối API để tải danh mục dữ liệu.', fields: []
     };
   }
 
-  get selectedFieldDefinitions() {
-    return this.selectedDataset.fields.filter((field) => this.selectedFields.includes(field.key));
-  }
-
   get statusLabel(): string {
-    return {
-      demo: 'Demo mode',
-      connecting: 'Connecting',
-      connected: 'API connected',
-      error: 'Offline fallback'
-    }[this.connectionState];
+    return { demo: 'Dữ liệu mẫu', connecting: 'Đang kết nối', connected: 'Đã kết nối API', error: 'Chạy ngoại tuyến' }[this.connectionState];
   }
 
-  setView(view: ViewKey): void {
-    this.activeView = view;
-  }
-
-  openBuilder(): void {
-    this.activeView = 'builder';
-    this.showConnectionPanel = false;
-  }
+  setView(view: ViewKey): void { this.activeView = view; }
+  openBuilder(): void { this.activeView = 'builder'; this.showConnectionPanel = false; }
 
   selectDataset(code: string): void {
     this.selectedDatasetCode = code;
@@ -116,7 +89,7 @@ export class App {
     this.filters = available.filter((field) => field.filterable).slice(0, 1).map((field) => ({
       fieldName: field.key,
       label: field.label,
-      filterType: field.type === 'date' ? 'date' : 'text',
+      filterType: field.type === 'date' ? 'date_range' : field.type === 'enum' ? 'select' : 'text',
       required: false,
       defaultValue: null
     }));
@@ -132,136 +105,142 @@ export class App {
     const candidate = this.selectedDataset.fields.find(
       (field) => field.filterable && !this.filters.some((filter) => filter.fieldName === field.key)
     );
-
     if (!candidate) {
-      this.notify('No additional filterable fields are available.', 'info');
+      this.notify('Nguồn dữ liệu này không còn trường nào có thể lọc.', 'info');
       return;
     }
-
     this.filters = [...this.filters, {
       fieldName: candidate.key,
       label: candidate.label,
-      filterType: candidate.type === 'date' ? 'date' : 'text',
+      filterType: candidate.type === 'date' ? 'date_range' : candidate.type === 'enum' ? 'select' : 'text',
       required: false,
       defaultValue: null
     }];
   }
 
-  removeFilter(index: number): void {
-    this.filters = this.filters.filter((_, currentIndex) => currentIndex !== index);
-  }
+  removeFilter(index: number): void { this.filters = this.filters.filter((_, currentIndex) => currentIndex !== index); }
 
   async connectApi(): Promise<void> {
     if (!this.accessToken.trim()) {
-      this.notify('Paste an access token from your Identity Provider first.', 'error');
+      this.notify('Hãy nhập access token từ hệ thống đăng nhập trước.', 'error');
       return;
     }
 
     this.connectionState = 'connecting';
     this.api.configure(this.apiBaseUrl, this.accessToken);
-
     try {
-      const response = await firstValueFrom(this.api.datasets);
-      if (!response.success || !response.data) {
-        throw new Error(response.message ?? 'The API did not return datasets.');
-      }
-      this.datasets = response.data;
+      const response = await firstValueFrom(this.api.catalog);
+      if (!response.success || !response.data) throw new Error(response.message ?? 'API không trả về danh mục dữ liệu.');
+      this.datasets = response.data.dataSources.map((source) => ({
+        code: source.id,
+        name: source.name,
+        category: source.category,
+        description: source.description,
+        fields: source.fields.map((field) => ({
+          key: field.id,
+          label: field.name,
+          type: field.type,
+          filterable: field.canFilter,
+          enumValues: field.options ?? undefined
+        }))
+      }));
       this.selectedDatasetCode = this.datasets[0]?.code ?? this.selectedDatasetCode;
       this.connectionState = 'connected';
-      this.notify('Connected. Dataset catalog is up to date.', 'success');
+      this.notify('Đã tải danh mục nguồn dữ liệu từ API.', 'success');
     } catch (error) {
       this.connectionState = 'error';
-      this.notify(error instanceof Error ? error.message : 'API connection failed. Demo data is still available.', 'error');
+      this.notify(error instanceof Error ? error.message : 'Không kết nối được API.', 'error');
     }
   }
 
   async saveConfiguration(): Promise<void> {
-    if (!this.reportCode.trim() || !this.reportName.trim()) {
-      this.notify('Report code and name are required.', 'error');
+    if (!this.reportName.trim() || !this.selectedDatasetCode) {
+      this.notify('Tên báo cáo và nguồn dữ liệu là bắt buộc.', 'error');
       return;
     }
 
-    const input: ReportConfigurationInput = {
-      code: this.reportCode.trim(),
+    const input: CreateReportInput = {
       name: this.reportName.trim(),
-      datasetCode: this.selectedDatasetCode,
-      selectedFields: this.selectedFields,
-      filters: this.filters,
-      customTemplateContent: this.templateContent
+      dataSourceId: this.selectedDatasetCode,
+      columns: this.selectedFields,
+      filters: this.filters.map((filter) => ({
+        field: filter.fieldName,
+        type: filter.filterType,
+        label: filter.label,
+        required: filter.required,
+        defaultValue: filter.defaultValue
+      }))
     };
 
     if (!this.api.configured) {
       this.upsertRecentReport('Draft');
-      this.notify('Saved in demo mode. Connect the API to persist this configuration.', 'info');
+      this.notify('Đã lưu bản nháp trên màn hình. Kết nối API để lưu vào hệ thống.', 'info');
       return;
     }
 
     try {
-      const response = await firstValueFrom(this.api.saveConfiguration(input));
-      if (!response.success) {
-        throw new Error(response.message ?? 'The report configuration could not be saved.');
-      }
+      const response = await firstValueFrom(this.api.createReport(input));
+      if (!response.success || !response.data) throw new Error(response.message ?? 'Không tạo được báo cáo.');
+      this.reportCode = response.data.code;
       this.upsertRecentReport('Ready');
-      this.notify('Report configuration saved to the tenant workspace.', 'success');
+      this.notify('Đã lưu báo cáo vào workspace.', 'success');
     } catch (error) {
-      this.notify(error instanceof Error ? error.message : 'Save failed.', 'error');
-    }
-  }
-
-  async validateTemplate(): Promise<void> {
-    if (!this.api.configured) {
-      const valid = this.templateContent.trim().length > 0 && !/<script|javascript:/i.test(this.templateContent);
-      this.notify(valid ? 'Template syntax looks valid in demo mode.' : 'Template contains invalid or unsafe content.', valid ? 'success' : 'error');
-      return;
-    }
-
-    try {
-      const response = await firstValueFrom(this.api.validateTemplate(this.templateContent));
-      const result = response.data;
-      this.notify(result?.isValid ? 'Template validated successfully.' : result?.errorMessage ?? 'Template is invalid.', result?.isValid ? 'success' : 'error');
-    } catch (error) {
-      this.notify(error instanceof Error ? error.message : 'Template validation failed.', 'error');
+      this.notify(error instanceof Error ? error.message : 'Lưu báo cáo thất bại.', 'error');
     }
   }
 
   async exportReport(): Promise<void> {
-    const criteria = Object.fromEntries(
-      Object.entries(this.filterValues).filter(([, value]) => value.trim().length > 0)
-    );
-
+    const filters = this.exportFilters();
     if (!this.api.configured) {
-      const demoContent = `<html><body><h1>${this.reportName}</h1><p>Demo export · ${new Date().toLocaleString()}</p><p>Connect the API to render the live tenant dataset.</p></body></html>`;
-      this.download(new Blob([demoContent], { type: 'text/html' }), `${this.reportCode}-demo.html`);
-      this.notify('Demo HTML export downloaded. Connect the API for a live export.', 'info');
+      const demoContent = `<html><body><h1>${this.reportName}</h1><p>Demo export · ${new Date().toLocaleString()}</p><p>Kết nối API để xuất dữ liệu thật.</p></body></html>`;
+      this.download(new Blob([demoContent], { type: 'text/html' }), `${this.reportCode}.html`);
+      this.notify('Đã tải file HTML mẫu. Kết nối API để xuất PDF/dữ liệu thật.', 'info');
       return;
     }
 
+    if (this.reportCode === 'report-demo') {
+      await this.saveConfiguration();
+      if (this.reportCode === 'report-demo') return;
+    }
+
     try {
-      const response = await firstValueFrom(this.api.executeConfiguration(this.reportCode, {
-        criteria,
-        format: this.outputFormat === 'Pdf' ? 0 : 1
+      const response = await firstValueFrom(this.api.exportReport(this.reportCode, {
+        format: this.outputFormat === 'Pdf' ? 'pdf' : 'html',
+        filters
       }));
-      const contentType = response.headers.get('content-type') ?? (this.outputFormat === 'Pdf' ? 'application/pdf' : 'text/html');
-      const blob = response.body ?? new Blob([], { type: contentType });
-      this.download(blob, `${this.reportCode}.${this.outputFormat === 'Pdf' ? 'pdf' : 'html'}`);
-      this.notify('Report export completed.', 'success');
+      const contentType = response.headers.get('content-type') ?? 'application/octet-stream';
+      const extension = this.outputFormat === 'Pdf' ? 'pdf' : 'html';
+      this.download(response.body ?? new Blob([], { type: contentType }), `${this.reportCode}.${extension}`);
+      this.notify('Đã xuất báo cáo thành công.', 'success');
     } catch (error) {
-      this.notify(error instanceof Error ? error.message : 'Export failed.', 'error');
+      this.notify(error instanceof Error ? error.message : 'Xuất báo cáo thất bại.', 'error');
     }
   }
 
+  private exportFilters(): Record<string, unknown> {
+    const result: Record<string, unknown> = {};
+    for (const filter of this.filters) {
+      if (filter.filterType === 'date_range') {
+        result[filter.fieldName] = {
+          from: this.filterValues[`${filter.fieldName}_from`] || null,
+          to: this.filterValues[`${filter.fieldName}_to`] || null
+        };
+      } else if (this.filterValues[filter.fieldName]?.trim()) {
+        result[filter.fieldName] = this.filterValues[filter.fieldName].trim();
+      }
+    }
+    return result;
+  }
+
   private upsertRecentReport(status: RecentReport['status']): void {
-    this.recentReports = [
-      {
-        name: this.reportName,
-        dataset: this.selectedDataset.name,
-        format: this.outputFormat.toUpperCase(),
-        status,
-        updated: 'Just now',
-        accent: 'violet'
-      },
-      ...this.recentReports.filter((report) => report.name !== this.reportName)
-    ];
+    this.recentReports = [{
+      name: this.reportName,
+      dataset: this.selectedDataset.name,
+      format: this.outputFormat.toUpperCase(),
+      status,
+      updated: 'Vừa xong',
+      accent: 'violet'
+    }, ...this.recentReports.filter((report) => report.name !== this.reportName)];
   }
 
   private download(blob: Blob, fileName: string): void {
@@ -276,48 +255,35 @@ export class App {
   private notify(message: string, tone: App['toastTone']): void {
     this.toastMessage = message;
     this.toastTone = tone;
-    window.setTimeout(() => {
-      if (this.toastMessage === message) {
-        this.toastMessage = '';
-      }
-    }, 4200);
+    window.setTimeout(() => { if (this.toastMessage === message) this.toastMessage = ''; }, 4200);
   }
 
   private demoDatasets(): SemanticDataset[] {
     return [
       {
-        code: 'orders',
-        name: 'Orders',
-        category: 'Sales',
-        description: 'Orders, customers and revenue fields scoped to the active tenant.',
+        code: 'orders', name: 'Đơn hàng', category: 'Bán hàng', description: 'Đơn hàng, khách hàng và doanh thu trong tenant hiện tại.',
         fields: [
-          { key: 'orderNumber', label: 'Order number', type: 'string', filterable: true },
-          { key: 'customerName', label: 'Customer', type: 'string', filterable: true },
-          { key: 'totalAmount', label: 'Total amount', type: 'currency', filterable: true },
-          { key: 'status', label: 'Status', type: 'enum', filterable: true, enumValues: ['Pending', 'Confirmed', 'Processing', 'Shipped', 'Delivered', 'Cancelled'] },
-          { key: 'createdAt', label: 'Created date', type: 'date', filterable: true }
+          { key: 'orderNumber', label: 'Mã đơn hàng', type: 'string', filterable: true },
+          { key: 'customerName', label: 'Khách hàng', type: 'string', filterable: true },
+          { key: 'totalAmount', label: 'Tổng tiền', type: 'currency', filterable: true },
+          { key: 'status', label: 'Trạng thái', type: 'enum', filterable: true, enumValues: ['Pending', 'Confirmed', 'Processing', 'Shipped', 'Delivered', 'Cancelled'] },
+          { key: 'createdAt', label: 'Ngày tạo', type: 'date', filterable: true }
         ]
       },
       {
-        code: 'order-statistics',
-        name: 'Order statistics',
-        category: 'Operations',
-        description: 'Aggregated order volume and status distribution.',
+        code: 'order-statistics', name: 'Thống kê đơn hàng', category: 'Vận hành', description: 'Số lượng và doanh thu được tổng hợp theo trạng thái.',
         fields: [
-          { key: 'status', label: 'Status', type: 'enum', filterable: true },
-          { key: 'orderCount', label: 'Order count', type: 'number', filterable: false },
-          { key: 'totalRevenue', label: 'Revenue', type: 'currency', filterable: false }
+          { key: 'status', label: 'Trạng thái', type: 'enum', filterable: true },
+          { key: 'orderCount', label: 'Số đơn', type: 'number', filterable: false },
+          { key: 'totalRevenue', label: 'Doanh thu', type: 'currency', filterable: false }
         ]
       },
       {
-        code: 'audit-logs',
-        name: 'Audit activity',
-        category: 'Compliance',
-        description: 'Security and business activity available to audit readers.',
+        code: 'audit-logs', name: 'Hoạt động hệ thống', category: 'Kiểm soát', description: 'Hoạt động người dùng và sự kiện cần theo dõi.',
         fields: [
-          { key: 'timestamp', label: 'Timestamp', type: 'date', filterable: true },
-          { key: 'action', label: 'Action', type: 'string', filterable: true },
-          { key: 'userId', label: 'User', type: 'string', filterable: true }
+          { key: 'timestamp', label: 'Thời gian', type: 'date', filterable: true },
+          { key: 'action', label: 'Hành động', type: 'string', filterable: true },
+          { key: 'userId', label: 'Người dùng', type: 'string', filterable: true }
         ]
       }
     ];
