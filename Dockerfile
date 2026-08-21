@@ -3,15 +3,21 @@
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 
-COPY ["WolverineApp/WolverineApp.csproj", "WolverineApp/"]
-RUN dotnet restore "WolverineApp/WolverineApp.csproj"
+COPY ["global.json", "."]
+COPY ["Directory.Build.props", "."]
+COPY ["Directory.Packages.props", "."]
+COPY ["src/Order.Domain/Order.Domain.csproj", "src/Order.Domain/"]
+COPY ["src/Order.Application/Order.Application.csproj", "src/Order.Application/"]
+COPY ["src/Order.Infrastructure/Order.Infrastructure.csproj", "src/Order.Infrastructure/"]
+COPY ["src/Order.ServiceDefaults/Order.ServiceDefaults.csproj", "src/Order.ServiceDefaults/"]
+COPY ["src/Order.WebApi/Order.WebApi.csproj", "src/Order.WebApi/"]
+RUN dotnet restore "src/Order.WebApi/Order.WebApi.csproj"
 
 COPY . .
-WORKDIR /src/WolverineApp
 
 # Generate Wolverine handlers before publishing so production starts in static mode.
-RUN dotnet run --configuration Release --no-restore -- codegen write
-RUN dotnet publish "WolverineApp.csproj" \
+RUN dotnet run --project "src/Order.WebApi/Order.WebApi.csproj" --configuration Release --no-restore -- codegen write
+RUN dotnet publish "src/Order.WebApi/Order.WebApi.csproj" \
     --configuration Release \
     --no-restore \
     --output /app/publish \
@@ -28,4 +34,4 @@ EXPOSE 8080
 COPY --from=build /app/publish .
 
 USER $APP_UID
-ENTRYPOINT ["dotnet", "WolverineApp.dll"]
+ENTRYPOINT ["dotnet", "Order.WebApi.dll"]

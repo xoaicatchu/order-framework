@@ -1,0 +1,14 @@
+<Solution>
+  <Project Path="src/Order.Domain/Order.Domain.csproj" />
+  <Project Path="src/Order.Application/Order.Application.csproj" />
+  <Project Path="src/Order.Infrastructure/Order.Infrastructure.csproj" />
+  <Project Path="src/Order.ServiceDefaults/Order.ServiceDefaults.csproj" />
+  <Project Path="src/Order.WebApi/Order.WebApi.csproj" />
+  <Project Path="src/Order.Shared/Order.Shared.csproj" />
+  <Project Path="src/Order.AppHost/Order.AppHost.csproj" />
+  <Project Path="tests/Order.Domain.UnitTests/Order.Domain.UnitTests.csproj" />
+  <Project Path="tests/Order.Application.UnitTests/Order.Application.UnitTests.csproj" />
+  <Project Path="tests/Order.Application.FunctionalTests/Order.Application.FunctionalTests.csproj" />
+  <Project Path="tests/Order.Infrastructure.IntegrationTests/Order.Infrastructure.IntegrationTests.csproj" />
+  <Project Path="tests/Order.WebApi.AcceptanceTests/Order.WebApi.AcceptanceTests.csproj" />
+</Solution>

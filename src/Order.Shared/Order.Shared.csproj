@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>Order.Shared</RootNamespace>
+    <AssemblyName>Order.Shared</AssemblyName>
+  </PropertyGroup>
+</Project>

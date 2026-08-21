@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>WolverineApp.Domain</RootNamespace>
+    <AssemblyName>Order.Domain</AssemblyName>
+  </PropertyGroup>
+</Project>

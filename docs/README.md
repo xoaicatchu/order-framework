@@ -12,6 +12,7 @@ Tài liệu được chia theo người đọc và mục đích sử dụng. M�
 | Reporting/BA | [Reporting guide](reporting/reporting-guide.md) | Dataset, template Liquid, render PDF/HTML và giới hạn |
 | DevOps/SRE | [Deployment & operations](operations/deployment-and-operations.md) | Docker, environment, health check, Redis, migration và outbox |
 | Release reviewer | [Production readiness](operations/production-readiness.md) | Checklist và các hạng mục còn phải hoàn tất trước production |
+| Architecture decisions | [ADR-0001](architecture/decisions/ADR-0001-layer-boundaries-and-repository-port.md), [ADR-0002](architecture/decisions/ADR-0002-database-and-migration-policy.md) | Quyết định boundary và database/migration |
 
 ## Quy tắc quản lý tài liệu
 

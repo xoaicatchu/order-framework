@@ -1,105 +1,78 @@
 # Wolverine Order Framework
 
-Nền tảng ASP.NET Core đa tenant cho order management, RBAC động, reporting và transactional outbox.
+ASP.NET Core/.NET 10 backend cho order management, multi-tenancy, RBAC động, reporting, idempotency, hybrid cache và transactional outbox.
 
-![.NET 10](https://img.shields.io/badge/.NET-10-512BD4?logo=dotnet)
-![Wolverine](https://img.shields.io/badge/WolverineFx-6.29.0-F26B38)
-![Build](https://img.shields.io/badge/build-Release%20verified-success)
+## Trạng thái hiện tại
 
-## Phạm vi hiện tại
+Solution đã được tách theo boundary vật lý và build Release sạch. Development dùng SQLite; production mặc định PostgreSQL, Redis và external OIDC/JWT. Production không tự migrate schema và không seed dữ liệu demo.
 
-Ứng dụng hiện cung cấp:
+Đã chạy migration hardening thành công trên PostgreSQL Supabase được cấu hình cho môi trường này. Backend ở mức ready for controlled staging; production thực tế vẫn cần chốt IdP, secret manager, CORS/proxy, observability và security/load test.
 
-- REST API cho orders, roles, permissions, audit logs và reports.
-- JWT bearer từ Identity Provider bên ngoài; không phát hành token local.
-- Multi-tenancy lấy từ claim `tenant_id`, có query filter và tenant membership.
-- Unit of Work + Repository ở Application boundary; `DbContext` chỉ nằm trong Persistence/Composition Root.
-- Transactional outbox với signal, database lease, retry backoff và at-least-once delivery.
-- HTTP idempotency qua header `Idempotency-Key`.
-- Hybrid cache với Redis distributed cache cho production.
-- Wolverine pre-generated handlers ở Production (`TypeLoadMode.Static`).
-
-## Bắt đầu nhanh ở Development
-
-Yêu cầu: .NET SDK 10 và PowerShell/bash.
-
-```powershell
-cd WolverineApp
-dotnet restore
-$env:ASPNETCORE_ENVIRONMENT = "Development"
-$env:Jwt__SecretKey = "development-only-secret-key-minimum-32-chars"
-dotnet run
-```
-
-Mặc định Development dùng SQLite `orders.db`. Schema được migrate khi ứng dụng khởi động. Swagger có tại `http://localhost:5000/swagger` nếu cổng của máy khác thì dùng cổng được log ra bởi ứng dụng.
-
-Kiểm tra nhanh:
-
-```powershell
-Invoke-WebRequest http://localhost:5000/health/live
-```
-
-`POST /api/auth/token` luôn trả `410 AUTH_PROVIDER_REQUIRED`; hãy dùng token do Identity Provider cấp.
-
-## Chạy bằng Docker
-
-Dockerfile đã có sẵn bước generate Wolverine code trước khi publish:
-
-```bash
-docker build -t wolverine-order-framework:latest .
-docker run --rm -p 8080:8080 \
-  -e ConnectionStrings__DefaultConnection="Data Source=/data/orders.db" \
-  -e ConnectionStrings__Redis="redis:6379" \
-  -e Jwt__Authority="https://identity.example.com" \
-  -v wolverine-data:/data \
-  wolverine-order-framework:latest
-```
-
-Image mặc định chạy Production ở port `8080`, dùng user non-root. Redis, JWT và database phải được truyền qua secret/config của môi trường; không commit secret vào `appsettings.json`.
-
-> Lưu ý: code hiện tại dùng SQLite provider. SQLite phù hợp cho development/smoke test; trước production cần thay provider và connection strategy bằng PostgreSQL/SQL Server managed, sau đó chạy migrations trong deployment pipeline.
-
-## Kiến trúc thư mục
+## Cấu trúc
 
 ```text
-WolverineApp/
-├── Domain/                  # Entity, aggregate rule, domain event
-├── Application/             # Command/query, DTO, interface, validation
-├── Controllers/             # HTTP adapter; không truy cập DbContext
-├── Infrastructure/
-│   ├── Persistence/         # DbContext, UoW, repository, persistence models
-│   ├── Identity/            # tenant, current user, permission service
-│   ├── Messaging/           # idempotency và outbox signal
-│   ├── Caching/             # hybrid cache implementation
-│   ├── Reporting/           # Liquid, template store, PDF/HTML renderer
-│   └── BackgroundServices/  # outbox dispatcher
-├── Internal/Generated/      # Wolverine generated handler registry
-└── Migrations/              # EF Core migrations
-
-WolverineFrontend/           # Angular Report Studio: quản lý và xuất report
+src/
+├── Order.Domain/          # Aggregate, entity, rule, domain event
+├── Order.Application/     # Use case, DTO, validator, port/interface
+├── Order.Infrastructure/ # EF persistence, cache, auth adapter, outbox, reporting
+├── Order.WebApi/          # HTTP composition root, controllers, generated Wolverine code
+├── Order.ServiceDefaults/ # Service composition boundary
+├── Order.Shared/          # Shared contracts tối thiểu
+└── Order.AppHost/         # Aspire local orchestration: PostgreSQL + Redis + API
+tests/                     # Unit, functional, integration, acceptance
+WolverineFrontend/         # Angular Report Studio
 ```
+
+`Application` không reference `Infrastructure`. EF Core/DbContext chỉ được compose tại Infrastructure/WebApi; repository và Unit of Work là port ở Application. Các query cũ còn dùng `IQueryable` được ghi nhận trong ADR để tiếp tục refactor theo từng use case.
+
+## Chạy development
+
+```powershell
+dotnet restore order-framework.slnx
+$env:ASPNETCORE_ENVIRONMENT = "Development"
+dotnet run --project src/Order.WebApi/Order.WebApi.csproj
+```
+
+Development tự dùng `src/Order.WebApi/appsettings.Development.json`, SQLite `orders.dev.db`, auto-migrate và seed demo. Swagger ở `/swagger`; health ở `/health/live`, `/health/ready`.
+
+Chạy cả PostgreSQL + Redis qua Aspire:
+
+```powershell
+dotnet run --project src/Order.AppHost/Order.AppHost.csproj
+```
+
+## Build, test và codegen
+
+```powershell
+dotnet build order-framework.slnx --configuration Release
+dotnet test order-framework.slnx --configuration Release
+dotnet run --project src/Order.WebApi/Order.WebApi.csproj -- codegen write
+```
+
+Production dùng Wolverine static codegen. Migration phải chạy bằng deployment job/`dotnet ef database update` với `Database__Provider=postgresql`; không bật auto-migration trong production. Runtime dùng `ConnectionStrings__DefaultConnection` qua transaction pooler (6543); migration dùng `ConnectionStrings__MigrationConnection` qua session pooler (5432).
+
+## Docker
+
+```bash
+docker build -t order-framework:local .
+docker run --rm -p 8080:8080 \
+  -e ConnectionStrings__DefaultConnection="Host=host.docker.internal;Database=order_framework;Username=postgres;Password=change-me" \
+  -e ConnectionStrings__Redis="host.docker.internal:6379" \
+  -e Jwt__Authority="https://identity.example.com" \
+  order-framework:local
+```
+
+Image chạy non-root ở port `8080`. Không đưa secret vào appsettings hoặc image.
 
 ## Tài liệu theo góc nhìn
 
 - [Mục lục tài liệu](docs/README.md)
-- [Tích hợp API cho Frontend/đối tác](docs/integration/api-integration-guide.md)
+- [Tích hợp API cho frontend/đối tác](docs/integration/api-integration-guide.md)
+- [Reporting: dataset, template, input/output](docs/reporting/reporting-guide.md)
 - [Tổng quan kiến trúc](docs/architecture/system-overview.md)
-- [Hướng dẫn developer](docs/development/developer-guide.md)
-- [Reporting và template](docs/reporting/reporting-guide.md)
+- [Developer guide](docs/development/developer-guide.md)
 - [Deployment và vận hành](docs/operations/deployment-and-operations.md)
 - [Production readiness](docs/operations/production-readiness.md)
 - [Frontend Report Studio](WolverineFrontend/README.md)
 
-## Kiểm chứng gần nhất
-
-```text
-dotnet build -c Release --no-restore                         PASS, 0 warning, 0 error
-dotnet ef migrations has-pending-model-changes --no-build   PASS
-dotnet list package --vulnerable --include-transitive       PASS
-```
-
-Repository chưa có test project tự động. Vì vậy trạng thái đúng là “sẵn sàng lên staging để kiểm thử”, chưa phải cam kết production-ready tuyệt đối.
-
-## License và trạng thái
-
-Đây là codebase nội bộ/reference implementation. Quyền sử dụng, license và chính sách phát hành cần được chủ sở hữu repository xác nhận trước khi phân phối cho bên ngoài.
+Không commit/push được thực hiện trong lần refactor này.

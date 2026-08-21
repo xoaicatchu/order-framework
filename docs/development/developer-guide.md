@@ -3,7 +3,7 @@
 ## Setup
 
 ```bash
-cd WolverineApp
+cd D:\Github\wolverine
 dotnet restore
 dotnet build
 dotnet run
@@ -25,7 +25,7 @@ dotnet run -- codegen write
 dotnet build -c Release --no-restore
 ```
 
-Generated files nằm tại `WolverineApp/Internal/Generated/WolverineHandlers` và phải commit cùng thay đổi handler.
+Generated files nằm tại `src/Order.WebApi/Generated/WolverineHandlers` và phải cập nhật cùng thay đổi handler.
 
 ## Persistence rule
 
@@ -51,7 +51,7 @@ dotnet ef database update
 Trước khi commit:
 
 ```bash
-dotnet ef migrations has-pending-model-changes
+dotnet ef migrations has-pending-model-changes --project src/Order.Infrastructure/Order.Infrastructure.csproj --startup-project src/Order.WebApi/Order.WebApi.csproj
 ```
 
 Production chạy migrations qua deployment pipeline, không dùng `EnsureCreated`.

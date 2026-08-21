@@ -46,6 +46,6 @@ Khi domain event phát sinh trong transaction, `ApplicationDbContext` ghi dữ l
 
 ## Giới hạn cần biết
 
-- Provider hiện tại trong code là SQLite; production cần thay bằng PostgreSQL/SQL Server managed.
+- Provider production là PostgreSQL; SQLite chỉ dùng cho Development/Test. Startup không tự migrate khi `Database:RequireExternalMigration=true`.
 - Chưa có test project tự động trong repository.
 - Outbox không phải exactly-once; không được dùng nó như cam kết consumer chỉ chạy một lần.

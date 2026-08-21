@@ -94,7 +94,7 @@ Các HTTP status cần xử lý:
 | Audit logs | `AuditLogs:Read` |
 | Reports | `Reports:Read`, `Reports:Export` |
 
-`GET /api/roles/permissions/matrix` là endpoint public để UI đọc permission catalog. Các endpoint còn lại yêu cầu bearer token trừ `POST /api/auth/token`, endpoint này luôn trả `410`.
+`GET /api/roles/permissions/matrix` yêu cầu bearer token và quyền `Roles:Read`. `POST /api/auth/token` luôn trả `410 AUTH_PROVIDER_REQUIRED`; frontend/đối tác phải dùng Authorization Code + PKCE tại Identity Provider.
 
 ## Orders API
 
@@ -233,7 +233,7 @@ GET /api/roles/permissions/matrix
 GET /api/roles/permissions
 ```
 
-Matrix public dùng để dựng permission selector. Endpoint `/permissions` yêu cầu authentication.
+Matrix dùng để dựng permission selector sau khi user đã đăng nhập. Endpoint `/permissions` cũng yêu cầu authentication.
 
 ### Create/update role
 
